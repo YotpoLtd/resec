@@ -2,103 +2,19 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/go-redis/redis"
-	consul "github.com/hashicorp/consul/api"
-
 	log "github.com/Sirupsen/logrus"
-	"os"
+	"github.com/go-redis/redis"
+	consulapi "github.com/hashicorp/consul/api"
 	"strconv"
+	"strings"
 )
 
-const (
-	consulLockKey   = "reclaim/allocations.lock"
-	consulLockValue = "reclaim/allocations.value"
-)
 
-// Wait for lock to the Consul KV key.
-// This will ensure we are the only master is holding a lock and registered
-func WaitForLock(key string) (*consul.Lock, string, error) {
-	client, err := consul.NewClient(consul.DefaultConfig())
-	if err != nil {
-		return nil, "", err
-	}
+func RunAsMaster(consulClient *consulapi.Client, redisClient *redis.Client, resecConfig *ResecConfig) {
 
-	log.Info("Trying to acquire leader lock")
-	sessionID, err := session(client)
-	if err != nil {
-		return nil, "", err
-	}
+	log.Infof("Ok, My time to be the master, let's go!")
 
-	lock, err := client.LockOpts(&consul.LockOptions{
-		Key:     key,
-		Session: sessionID,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-
-	_, err = lock.Lock(nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	log.Info("Lock acquired")
-	return lock, sessionID, nil
-}
-
-// Create a Consul session used for locks
-func session(c *consul.Client) (string, error) {
-	s := c.Session()
-	se := &consul.SessionEntry{
-		Name: "RECLaiM",
-		TTL:  "10s",
-	}
-
-	id, _, err := s.Create(se, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return id, nil
-}
-
-func ServiceRegister(name string, address string, port int, interval string, timeout string) error {
-	client, err := consul.NewClient(consul.DefaultConfig())
-	if err != nil {
-		log.Error("failed to connect to consul")
-	}
-
-	sinfo := &consul.AgentServiceRegistration{
-		Tags:    []string{"master"},
-		Port:    port,
-		Address: address,
-		Name:    name,
-		Check: &consul.AgentServiceCheck{
-			TCP:      address + ":" + strconv.Itoa(port),
-			Interval: interval,
-			Timeout:  timeout,
-		},
-	}
-	err = client.Agent().ServiceRegister(sinfo)
-	if err != nil {
-		log.Error("consul Service registration failed", "error", err)
-		return err
-	}
-	log.Info("registration with consul completed", "sinfo", sinfo)
-	return err
-}
-
-func main() {
-
-	consul_service_name := os.Getenv("CONSUL_SERVICE_NAME")
-	redis_host := os.Getenv("REDIS_HOST")
-	redis_port := os.Getenv("REDIS_PORT")
-	redis_port_int, err := strconv.Atoi(redis_port)
-	if err != nil {
-		fmt.Println("Cannot convert to int REDIS_PORT, %s", err)
-	}
-	lock, sessionID, err := WaitForLock(consulLockKey)
+	lock, sessionID, err := WaitForLock(consulClient, resecConfig.consulLockKey)
 
 	if err != nil {
 		fmt.Println(err)
@@ -106,21 +22,100 @@ func main() {
 
 	fmt.Println(sessionID, err)
 
-	cclient, err := consul.NewClient(consul.DefaultConfig())
+	ServiceRegister(consulClient, resecConfig, "master",  "5s", "2s")
 
-	redisclient := redis.NewClient(&redis.Options{
-		Addr: redis_host + ":" + redis_port,
-	})
-
-	redisclient.SlaveOf("no", "one")
-
-	ServiceRegister(consul_service_name, redis_host, redis_port_int, "5s", "2s")
-
-	cclient.Session().RenewPeriodic("10s", sessionID, nil, nil)
+	consulClient.Session().RenewPeriodic("10s", sessionID, nil, nil)
 
 	defer lock.Unlock()
 
 	fmt.Println("I'm done")
 
+}
 
+func RunAsSlave(consulClient *consulapi.Client, redisClient *redis.Client, resecConfig *ResecConfig, currentMaster *consulapi.ServiceEntry) {
+	log.Infof("Ok, There's a healthy master in consul, I'm obeying this!")
+	redisClient.SlaveOf(currentMaster.Service.Address, strconv.Itoa(currentMaster.Service.Port))
+
+}
+
+func PromoteSlave(c *consulapi.Client, redisclient *redis.Client, rc *ResecConfig) {
+	log.Infof("Master is dead, let's Rock'n'Roll!")
+	redisclient.SlaveOf("no", "one")
+}
+
+func (s *ResecConfig) Start() error {
+	// Stop chan for all tasks to depend on
+	s.stopCh = make(chan interface{})
+
+	go s.run()
+
+	return nil
+}
+
+// Stop ...
+func (s *ResecConfig) Stop() {
+	close(s.stopCh)
+}
+
+func (*ResecConfig) run() {
+
+}
+
+
+func main() {
+
+	runConf := DefaultConfig()
+	consulClient, err := consulapi.NewClient(runConf.consulClientConfig)
+
+	log.Debugf("heres the client", consulClient)
+
+	if err != nil {
+		log.Fatalf("Can't connect to Consul on %s", runConf.consulClientConfig.Address)
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: runConf.redisAddr,
+	})
+
+	_, err = redisClient.Ping().Result()
+
+	if err != nil {
+		log.Fatalf("Can't Connect to redis running on %s", runConf.redisAddr)
+	}
+
+	var replicationRole string
+	replicationInfo := redisClient.Info("replication").String()
+
+	line := strings.Split(strings.TrimSuffix(replicationInfo, "\n"), "\n")[1]
+	if strings.HasPrefix(line, "role:") {
+		replicationRole = strings.TrimSuffix(strings.TrimPrefix(line, "role:"), "\r")
+	} else {
+		log.Fatalf("Redis returned [%s] instead of replication role", line)
+	}
+
+	if replicationRole == "master" {
+		log.Infof("Redis is %s, checking the service in consul", replicationRole)
+	}
+
+	Watch(runConf)
+
+	//consulServiceHealth, _, err := consulClient.Health().Service(runConf.consulServiceName, "master", true, nil)
+	//
+	//if err != nil {
+	//	log.Errorf("Can't check consul service, %s", err)
+	//}
+	//
+	//consulServiceHealthLenght := len(consulServiceHealth)
+	//
+	//switch {
+	//case consulServiceHealthLenght > 1:
+	//	log.Fatalf("There is more than one Master registered in Consul")
+	//case consulServiceHealthLenght == 0:
+	//	log.Infof("Consul Service is not registered let's do the magic!")
+	//	RunAsMaster(consulClient, redisClient, runConf)
+	//default:
+	//	RunAsSlave(consulClient, redisClient, runConf, consulServiceHealth[0])
+	//}
+	//
+	//log.Debugf("Consul Service status is %s", consulServiceHealth)
 }

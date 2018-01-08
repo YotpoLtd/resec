@@ -1,121 +1,105 @@
 package main
 
 import (
-	"fmt"
 	log "github.com/Sirupsen/logrus"
-	"github.com/go-redis/redis"
 	consulapi "github.com/hashicorp/consul/api"
 	"strconv"
-	"strings"
 )
 
-
-func RunAsMaster(consulClient *consulapi.Client, redisClient *redis.Client, resecConfig *ResecConfig) {
+func (rc *resecConfig) RunAsMaster() {
 
 	log.Infof("Ok, My time to be the master, let's go!")
 
-	lock, sessionID, err := WaitForLock(consulClient, resecConfig.consulLockKey)
+	close(rc.stopWatchCh)
 
-	if err != nil {
-		fmt.Println(err)
-	}
+	rc.Promote()
 
-	fmt.Println(sessionID, err)
+	rc.ServiceRegister("master")
 
-	ServiceRegister(consulClient, resecConfig, "master",  "5s", "2s")
-
-	consulClient.Session().RenewPeriodic("10s", sessionID, nil, nil)
-
-	defer lock.Unlock()
-
-	fmt.Println("I'm done")
+	rc.consulClient().Session().RenewPeriodic("10s", rc.sessionId, &consulapi.WriteOptions{Token:rc.consulClientConfig.Token}, rc.stopCh)
 
 }
 
-func RunAsSlave(consulClient *consulapi.Client, redisClient *redis.Client, resecConfig *ResecConfig, currentMaster *consulapi.ServiceEntry) {
+func (rc *resecConfig) RunAsSlave(currentMaster *consulapi.ServiceEntry) {
 	log.Infof("Ok, There's a healthy master in consul, I'm obeying this!")
-	redisClient.SlaveOf(currentMaster.Service.Address, strconv.Itoa(currentMaster.Service.Port))
-
+	rc.redisClient().SlaveOf(currentMaster.Service.Address, strconv.Itoa(currentMaster.Service.Port))
+	rc.ServiceRegister("slave")
 }
 
-func PromoteSlave(c *consulapi.Client, redisclient *redis.Client, rc *ResecConfig) {
+func (rc *resecConfig) Promote() {
 	log.Infof("Master is dead, let's Rock'n'Roll!")
-	redisclient.SlaveOf("no", "one")
+	rc.redisClient().SlaveOf("no", "one")
 }
 
-func (s *ResecConfig) Start() error {
-	// Stop chan for all tasks to depend on
-	s.stopCh = make(chan interface{})
+//
+//func (r *resecConfig) Start() error {
+//	// Stop chan for all tasks to depend on
+//	r.stopCh = make(chan interface{})
+//
+//	go r.run()
+//
+//	return nil
+//}
+//
+//// Stop ...
+//func (s *resecConfig) Stop() {
+//	close(s.stopCh)
+//}
+//
+//func (*resecConfig) run() {
+//
+//}
 
-	go s.run()
-
-	return nil
-}
-
-// Stop ...
-func (s *ResecConfig) Stop() {
-	close(s.stopCh)
-}
-
-func (*ResecConfig) run() {
-
-}
-
+//// Close the stopCh if we get a signal, so we can gracefully shut down
+//func (r *resecConfig) signalHandler() {
+//	c := make(chan os.Signal, 1)
+//	signal.Notify(c, os.Interrupt)
+//
+//	select {
+//	case <-c:
+//		log.Info("Caught signal, releasing lock and stopping...")
+//		r.Stop()
+//	case <-r.stopCh:
+//		break
+//	}
+//}
 
 func main() {
 
-	runConf := DefaultConfig()
-	consulClient, err := consulapi.NewClient(runConf.consulClientConfig)
+	// init the config
+	runConf := defaultConfig()
 
-	log.Debugf("heres the client", consulClient)
+	// connect to Consul
+	_ = runConf.consulClient()
 
-	if err != nil {
-		log.Fatalf("Can't connect to Consul on %s", runConf.consulClientConfig.Address)
+	// connect to Redis
+	_ = runConf.redisClient()
+
+	// start waiting for lock
+	go runConf.WaitForLock()
+
+	// update master if Lock acquired
+	go func() {
+		for range runConf.lockCh {
+			runConf.RunAsMaster()
+		}
+	}()
+
+	// run the master service watcher
+	runConf.Watch()
+
+	for m := range runConf.masterCh {
+		consulServiceHealthLength := len(m)
+
+		switch {
+		case consulServiceHealthLength > 1:
+			log.Fatalf("There is more than one Master registered in Consul")
+		case consulServiceHealthLength == 0:
+			log.Infof("Consul Service is not registered let's do the magic!")
+			runConf.RunAsMaster()
+		default:
+			runConf.RunAsSlave(m[0])
+		}
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: runConf.redisAddr,
-	})
-
-	_, err = redisClient.Ping().Result()
-
-	if err != nil {
-		log.Fatalf("Can't Connect to redis running on %s", runConf.redisAddr)
-	}
-
-	var replicationRole string
-	replicationInfo := redisClient.Info("replication").String()
-
-	line := strings.Split(strings.TrimSuffix(replicationInfo, "\n"), "\n")[1]
-	if strings.HasPrefix(line, "role:") {
-		replicationRole = strings.TrimSuffix(strings.TrimPrefix(line, "role:"), "\r")
-	} else {
-		log.Fatalf("Redis returned [%s] instead of replication role", line)
-	}
-
-	if replicationRole == "master" {
-		log.Infof("Redis is %s, checking the service in consul", replicationRole)
-	}
-
-	Watch(runConf)
-
-	//consulServiceHealth, _, err := consulClient.Health().Service(runConf.consulServiceName, "master", true, nil)
-	//
-	//if err != nil {
-	//	log.Errorf("Can't check consul service, %s", err)
-	//}
-	//
-	//consulServiceHealthLenght := len(consulServiceHealth)
-	//
-	//switch {
-	//case consulServiceHealthLenght > 1:
-	//	log.Fatalf("There is more than one Master registered in Consul")
-	//case consulServiceHealthLenght == 0:
-	//	log.Infof("Consul Service is not registered let's do the magic!")
-	//	RunAsMaster(consulClient, redisClient, runConf)
-	//default:
-	//	RunAsSlave(consulClient, redisClient, runConf, consulServiceHealth[0])
-	//}
-	//
-	//log.Debugf("Consul Service status is %s", consulServiceHealth)
 }

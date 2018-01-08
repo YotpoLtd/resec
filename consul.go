@@ -6,31 +6,37 @@ import (
 	consulwatch "github.com/hashicorp/consul/watch"
 )
 
-
 // Wait for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
-func WaitForLock(c *consulapi.Client, key string) (*consulapi.Lock, string, error) {
+func (rc *resecConfig) WaitForLock() {
 	log.Info("Trying to acquire leader lock")
-	sessionID, err := session(c)
+	consulClient := rc.consulClient()
+	sessionID, err := session(consulClient)
 	if err != nil {
-		return nil, "", err
+		rc.errCh <- err
 	}
 
-	lock, err := c.LockOpts(&consulapi.LockOptions{
-		Key:     key,
+	lock, err := consulClient.LockOpts(&consulapi.LockOptions{
+		Key:     rc.consulLockKey,
 		Session: sessionID,
 	})
+
 	if err != nil {
-		return nil, "", err
+		rc.errCh <- err
 	}
 
-	_, err = lock.Lock(nil)
+	_, err = lock.Lock(rc.lockAbortCh)
+
 	if err != nil {
-		return nil, "", err
+		rc.errCh <- err
 	}
 
 	log.Info("Lock acquired")
-	return lock, sessionID, nil
+
+	rc.lockCh <- lock
+
+	rc.sessionId = sessionID
+
 }
 
 // Create a Consul session used for locks
@@ -49,20 +55,20 @@ func session(c *consulapi.Client) (string, error) {
 	return id, nil
 }
 
-func ServiceRegister(c *consulapi.Client, resecConfig *ResecConfig, replication_role string, interval string, timeout string) error {
+func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	serviceInfo := &consulapi.AgentServiceRegistration{
 		Tags:    []string{replication_role},
-		Port:    resecConfig.redisPort,
-		Address: resecConfig.redisHost,
-		Name:    resecConfig.consulServiceName,
+		Port:    rc.redisPort,
+		Address: rc.redisHost,
+		Name:    rc.consulServiceName,
 		Check: &consulapi.AgentServiceCheck{
-			TCP:      resecConfig.redisAddr,
-			Interval: interval,
-			Timeout:  timeout,
+			TCP:      rc.redisAddr,
+			Interval: "5s",
+			Timeout:  "2s",
 		},
 	}
 
-	err := c.Agent().ServiceRegister(serviceInfo)
+	err := rc.consulClient().Agent().ServiceRegister(serviceInfo)
 	if err != nil {
 		log.Error("consul Service registration failed", "error", err)
 		return err
@@ -71,12 +77,10 @@ func ServiceRegister(c *consulapi.Client, resecConfig *ResecConfig, replication_
 	return err
 }
 
-
-
-func  Watch(resecConfig *ResecConfig) (err error) {
+func (rc *resecConfig) Watch() (err error) {
 	params := map[string]interface{}{
 		"type":        "service",
-		"service":     resecConfig.consulServiceName,
+		"service":     rc.consulServiceName,
 		"tag":         "master",
 		"passingonly": true,
 	}
@@ -91,18 +95,31 @@ func  Watch(resecConfig *ResecConfig) (err error) {
 		switch srvcs := data.(type) {
 		case []*consulapi.ServiceEntry:
 			log.Debug("got an array of ServiceEntry", "srvcs", srvcs)
+			rc.masterCh <- srvcs
 		default:
 			log.Debug("got an unknown interface", "srvcs", srvcs)
 		}
 
 	}
 	go func() {
-		if err := wp.Run(resecConfig.consulClientConfig.Address); err != nil {
+		if err := wp.Run(rc.consulClientConfig.Address); err != nil {
 			log.Error("got an error watching for changes", "error", err)
 		}
 	}()
+
+	//Check if we should quit
+	//wait forever for a stop signal to happen
+	go func() {
+		for {
+			select {
+			case <-rc.stopWatchCh:
+				log.Debug("Stopped the watch, cause i'm the master")
+				wp.Stop()
+				return
+			default:
+			}
+		}
+	}()
+
 	return
 }
-
-
-

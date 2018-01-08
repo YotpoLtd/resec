@@ -11,32 +11,25 @@ import (
 func (rc *resecConfig) WaitForLock() {
 	log.Info("Trying to acquire leader lock")
 	consulClient := rc.consulClient()
-	sessionID, err := session(consulClient)
-	if err != nil {
-		rc.errCh <- err
-	}
 
 	lock, err := consulClient.LockOpts(&consulapi.LockOptions{
-		Key:     rc.consulLockKey,
-		Session: sessionID,
+		Key:         rc.consulLockKey,
+		SessionName: "ReSeC Lock",
+		SessionTTL:  "10s",
 	})
 
 	if err != nil {
 		rc.errCh <- err
 	}
 
-	_, err = lock.Lock(rc.lockAbortCh)
+	rc.lockCh, err = lock.Lock(rc.lockAbortCh)
 
 	if err != nil {
 		rc.errCh <- err
 	}
 
 	log.Info("Lock acquired")
-
-	rc.lockCh <- lock
-
-	rc.sessionId = sessionID
-
+	rc.RunAsMaster()
 }
 
 // Create a Consul session used for locks
@@ -77,7 +70,7 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	return err
 }
 
-func (rc *resecConfig) Watch() (err error) {
+func (rc *resecConfig) Watch() error {
 	params := map[string]interface{}{
 		"type":        "service",
 		"service":     rc.consulServiceName,
@@ -110,16 +103,13 @@ func (rc *resecConfig) Watch() (err error) {
 	//Check if we should quit
 	//wait forever for a stop signal to happen
 	go func() {
-		for {
-			select {
-			case <-rc.stopWatchCh:
-				log.Debug("Stopped the watch, cause i'm the master")
-				wp.Stop()
-				return
-			default:
-			}
+		select {
+		case <-rc.stopWatchCh:
+			log.Debug("Stopped the watch, cause i'm the master")
+			wp.Stop()
+		default:
 		}
 	}()
 
-	return
+	return nil
 }

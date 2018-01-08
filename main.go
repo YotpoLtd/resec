@@ -16,7 +16,7 @@ func (rc *resecConfig) RunAsMaster() {
 
 	rc.ServiceRegister("master")
 
-	rc.consulClient().Session().RenewPeriodic("10s", rc.sessionId, &consulapi.WriteOptions{Token:rc.consulClientConfig.Token}, rc.stopCh)
+	rc.consulClient().Session().RenewPeriodic("10s", rc.sessionId, &consulapi.WriteOptions{Token: rc.consulClientConfig.Token}, rc.stopCh)
 
 }
 
@@ -27,7 +27,7 @@ func (rc *resecConfig) RunAsSlave(currentMaster *consulapi.ServiceEntry) {
 }
 
 func (rc *resecConfig) Promote() {
-	log.Infof("Master is dead, let's Rock'n'Roll!")
+	log.Infof("Promoting redis to Master, let's Rock'n'Roll!")
 	rc.redisClient().SlaveOf("no", "one")
 }
 
@@ -69,21 +69,8 @@ func main() {
 	// init the config
 	runConf := defaultConfig()
 
-	// connect to Consul
-	_ = runConf.consulClient()
-
-	// connect to Redis
-	_ = runConf.redisClient()
-
 	// start waiting for lock
 	go runConf.WaitForLock()
-
-	// update master if Lock acquired
-	go func() {
-		for range runConf.lockCh {
-			runConf.RunAsMaster()
-		}
-	}()
 
 	// run the master service watcher
 	runConf.Watch()
@@ -93,10 +80,9 @@ func main() {
 
 		switch {
 		case consulServiceHealthLength > 1:
-			log.Fatalf("There is more than one Master registered in Consul")
+			log.Fatalf("There is more than one Master registered in Consul.")
 		case consulServiceHealthLength == 0:
-			log.Infof("Consul Service is not registered let's do the magic!")
-			runConf.RunAsMaster()
+			log.Infof("No redis services in Consul.")
 		default:
 			runConf.RunAsSlave(m[0])
 		}

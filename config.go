@@ -27,7 +27,7 @@ type resecConfig struct {
 	stopCh             chan struct{}
 	stopWatchCh        chan struct{}
 	errCh              chan error
-	lockCh             chan *consulapi.Lock
+	lockCh             <-chan struct{}
 	leaderCh           chan struct{}
 	lockAbortCh        chan struct{}
 	sessionId          string

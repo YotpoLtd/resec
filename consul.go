@@ -50,15 +50,17 @@ func session(c *consulapi.Client) (string, error) {
 
 func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	serviceInfo := &consulapi.AgentServiceRegistration{
-		Tags:    []string{replication_role},
-		Port:    rc.redisPort,
-		Address: rc.redisHost,
-		Name:    rc.consulServiceName,
+		Port:    rc.announcePort,
+		Name:    rc.consulServiceName + "-" + replication_role,
 		Check: &consulapi.AgentServiceCheck{
 			TCP:      rc.redisAddr,
-			Interval: "5s",
-			Timeout:  "2s",
+			Interval: rc.consulCheckInterval,
+			Timeout:  rc.consulCheckTimeout,
 		},
+	}
+
+	if rc.announceHost != "" {
+		serviceInfo.Address = rc.announceHost
 	}
 
 	err := rc.consulClient().Agent().ServiceRegister(serviceInfo)
@@ -73,8 +75,7 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 func (rc *resecConfig) Watch() error {
 	params := map[string]interface{}{
 		"type":        "service",
-		"service":     rc.consulServiceName,
-		"tag":         "master",
+		"service":     rc.consulServiceName + "-master",
 		"passingonly": true,
 	}
 

@@ -3,7 +3,7 @@ ReSeC
 main:
     1. Load Config
     2. Check Redis State
-    3. acquire Lock in consul
+    3. Acquire Lock in consul
         3.1. If lock acquired
         3.2. Stop watching for master changes
         3.3. Change redis state to master
@@ -14,7 +14,7 @@ main:
     5. Signal Listener
         5.1. If SIGQUIT/SIGTERM/SIGINT cought
         5.2. Release lock
-        5.3. Dereigster from counsul
+        5.3. Deregister from consul
 
 
 RedisClient - Used to setup master state replication

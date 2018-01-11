@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/go-redis/redis"
-	consulapi "github.com/hashicorp/consul/api"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/go-redis/redis"
+	consulapi "github.com/hashicorp/consul/api"
 )
 
 const (
@@ -80,8 +81,8 @@ func defaultConfig() *resecConfig {
 	if announceAddr := os.Getenv(AnnounceAddr); announceAddr != "" {
 		config.announceAddr = announceAddr
 	} else {
-		redisHost:=  strings.Split(config.redisAddr, ":")[0]
-		redisPort:=  strings.Split(config.redisAddr, ":")[1]
+		redisHost := strings.Split(config.redisAddr, ":")[0]
+		redisPort := strings.Split(config.redisAddr, ":")[1]
 		if redisHost != "127.0.0.1" {
 			config.announceAddr = config.redisAddr
 		} else {

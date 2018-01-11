@@ -32,26 +32,10 @@ func (rc *resecConfig) WaitForLock() {
 	rc.RunAsMaster()
 }
 
-// Create a Consul session used for locks
-func session(c *consulapi.Client) (string, error) {
-	s := c.Session()
-	se := &consulapi.SessionEntry{
-		Name: "ReSeC",
-		TTL:  "10s",
-	}
-
-	id, _, err := s.Create(se, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return id, nil
-}
-
 func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	serviceInfo := &consulapi.AgentServiceRegistration{
-		Port:    rc.announcePort,
-		Name:    rc.consulServiceName + "-" + replication_role,
+		Port: rc.announcePort,
+		Name: rc.consulServiceName + "-" + replication_role,
 		Check: &consulapi.AgentServiceCheck{
 			TCP:      rc.redisAddr,
 			Interval: rc.consulCheckInterval,

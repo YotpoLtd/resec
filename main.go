@@ -1,9 +1,10 @@
 package main
 
 import (
+	"strconv"
+
 	log "github.com/Sirupsen/logrus"
 	consulapi "github.com/hashicorp/consul/api"
-	"strconv"
 )
 
 func (rc *resecConfig) RunAsMaster() {

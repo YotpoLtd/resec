@@ -27,8 +27,6 @@ func main() {
 	case <-c:
 		log.Printf("[INFO] Caught signal, releasing lock and stopping...")
 		resec.Stop()
-	case <-resec.stopCh:
-		break
 	}
 
 }

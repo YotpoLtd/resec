@@ -4,7 +4,24 @@ import (
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/go-redis/redis"
 )
+
+func (rc *resecConfig) redisClientInit() {
+
+	redisOptions := &redis.Options{
+		Addr:        rc.redisAddr,
+		DialTimeout: rc.healthCheckTimeout,
+		ReadTimeout: rc.healthCheckTimeout,
+	}
+
+	if rc.redisPassword != "" {
+		redisOptions.Password = rc.redisPassword
+	}
+
+	rc.redisClient = redis.NewClient(redisOptions)
+}
 
 func (rc *resecConfig) runAsMaster() {
 	for {
@@ -34,7 +51,7 @@ func (rc *resecConfig) runAsSlave() {
 		enslaveErr := rc.redisClient.SlaveOf(masterAddress, strconv.Itoa(currentMaster.Service.Port)).Err()
 
 		if enslaveErr != nil {
-			log.Printf("[ERROR] Failed to enslave redis to %s:%d", masterAddress, currentMaster.Service.Port)
+			log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, currentMaster.Service.Port, enslaveErr)
 		}
 
 		rc.serviceRegister("slave")
@@ -47,7 +64,6 @@ func (rc *resecConfig) promote() {
 	if promoteErr != nil {
 		log.Printf("[ERROR] Failed to promote  redis to master - %s", promoteErr)
 	} else {
-		rc.master = true
 		rc.serviceRegister("master")
 		log.Println("[INFO] Promoted redis to Master")
 	}
@@ -62,34 +78,15 @@ func (rc *resecConfig) redisHealthCheck() {
 
 		if err != nil {
 			log.Printf("[ERROR] Can't connect to redis running on %s", rc.redisAddr)
-
 			rc.redisHealthCh <- &redisHealth{
 				Output:  "",
 				Healthy: false,
 			}
-			//if rc.waitingForLock {
-			//	rc.lockAbortCh <- struct{}{}
-			//	rc.waitingForLock = false
-			//}
-			//rc.redisHealthy = false
-			//rc.master = false
 		} else {
 			rc.redisHealthCh <- &redisHealth{
 				Output:  result,
 				Healthy: true,
 			}
-
-			//rc.redisHealthy = true
-			//if rc.consulCheckId != "" {
-			//	log.Printf("[DEBUG] Redis health OK")
-			//	err = rc.consulClient.Agent().UpdateTTL(rc.consulCheckId, result, "pass")
-			//	if err != nil {
-			//		log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
-			//	}
-			//}
-			//if !rc.master {
-			//	go rc.waitForLock()
-			//}
 		}
 
 		time.Sleep(rc.healthCheckInterval)

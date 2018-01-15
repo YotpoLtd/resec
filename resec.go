@@ -2,188 +2,7 @@ package main
 
 import (
 	"log"
-	"time"
-
-	"github.com/go-redis/redis"
-	consulapi "github.com/hashicorp/consul/api"
-	consulwatch "github.com/hashicorp/consul/watch"
 )
-
-func (rc *resecConfig) consulClientInit() {
-	var err error
-	rc.consulClient, err = consulapi.NewClient(rc.consulClientConfig)
-
-	if err != nil {
-		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)
-	}
-}
-
-func (rc *resecConfig) redisClientInit() {
-
-	redisOptions := &redis.Options{
-		Addr:        rc.redisAddr,
-		DialTimeout: rc.healthCheckTimeout,
-		ReadTimeout: rc.healthCheckTimeout,
-	}
-
-	if rc.redisPassword != "" {
-		redisOptions.Password = rc.redisPassword
-	}
-
-	rc.redisClient = redis.NewClient(redisOptions)
-}
-
-// Wait for lock to the Consul KV key.
-// This will ensure we are the only master is holding a lock and registered
-func (rc *resecConfig) waitForLock() {
-
-	rc.waitingForLock = true
-	log.Println("[INFO] Trying to acquire leader lock")
-
-	var err error
-
-	rc.lock, err = rc.consulClient.LockOpts(&consulapi.LockOptions{
-		Key:         rc.consulLockKey,
-		SessionName: "resec lock",
-		SessionTTL:  "15s",
-	})
-
-	if err != nil {
-		log.Printf("[ERROR] Failed setting lock options - %s", err)
-		rc.waitingForLock = false
-		return
-	}
-
-	rc.LockErrorCh, err = rc.lock.Lock(rc.lockAbortCh)
-	rc.waitingForLock = false
-	if err != nil {
-		log.Printf("[ERROR] Failed to acquire lock - %s", err)
-		return
-	}
-
-	log.Println("[INFO] Lock acquired")
-	rc.consulLockIsHeld = true
-	rc.promoteCh <- true
-
-}
-
-func (rc *resecConfig) handleWaitForLockError() {
-	for {
-		err := <-rc.LockErrorCh
-		rc.consulLockIsHeld = false
-		log.Printf("[ERROR] Consul lock failed with error %s", err)
-		log.Println("[INFO] Starting new waiter")
-		//go rc.waitForLock()
-	}
-}
-
-func (rc *resecConfig) AbortConsulLock(){
-	if rc.consulLockIsHeld {
-		log.Println("[DEBUG] Lock is held, releasing")
-		err := rc.lock.Unlock()
-		if err != nil {
-			log.Println("[ERROR] Can't release consul lock", err)
-		}
-	} else {
-		if rc.waitingForLock {
-			log.Println("[DEBUG] Stopping waiting for consul lock")
-			rc.lockAbortCh <- struct{}{}
-		}
-	}
-
-}
-
-func (rc *resecConfig) serviceRegister(replication_role string) error {
-
-	nameToRegister := rc.consulServiceNamePrefix + "-" + replication_role
-	rc.consulServiceId = nameToRegister + ":" + rc.redisAddr
-	rc.consulCheckId = rc.consulServiceId + ":replication-status-check"
-
-	serviceInfo := &consulapi.AgentServiceRegistration{
-		ID:   rc.consulServiceId,
-		Port: rc.announcePort,
-		Name: nameToRegister,
-	}
-
-	if rc.announceHost != "" {
-		serviceInfo.Address = rc.announceHost
-	}
-
-	err := rc.consulClient.Agent().ServiceRegister(serviceInfo)
-	if err != nil {
-		log.Println("[ERROR] Consul Service registration failed", "error", err)
-		return err
-	}
-
-	err = rc.consulClient.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
-		Name:      replication_role + " replication status",
-		ID:        rc.consulCheckId,
-		ServiceID: rc.consulServiceId,
-		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL: rc.consulTTL,
-			DeregisterCriticalServiceAfter: time.Duration(rc.healthCheckInterval * 10).String(),
-		},
-	})
-
-	if err != nil {
-		log.Println("[ERROR] Consul Check registration failed", "error", err)
-		return err
-	}
-
-	log.Printf("[INFO] Registed service [%s] on [%s:%d]", serviceInfo.Name, serviceInfo.Address, serviceInfo.Port)
-
-	return err
-}
-
-func (rc *resecConfig) Watch() error {
-	params := map[string]interface{}{
-		"type":        "service",
-		"service":     rc.consulServiceNamePrefix + "-master",
-		"passingonly": true,
-	}
-
-	wp, err := consulwatch.Parse(params)
-	if err != nil {
-		log.Println("[ERROR] couldn't create a watch plan", "error", err)
-		return err
-	}
-
-	wp.Handler = func(idx uint64, data interface{}) {
-		switch masterConsulServiceStatus := data.(type) {
-		case []*consulapi.ServiceEntry:
-			log.Printf("[DEBUG] got an array of ServiceEntry %s", masterConsulServiceStatus)
-			masterCount := len(masterConsulServiceStatus)
-			switch {
-			case masterCount > 1:
-				log.Printf("[DEBUG] Found more than one master registered in Consul.")
-			case masterCount == 0:
-				log.Printf("[DEBUG] No redis master services in Consul.")
-			default:
-				log.Printf("[DEBUG] Found redis master in Consul, %s", masterConsulServiceStatus[0])
-				rc.masterConsulServiceCh <- masterConsulServiceStatus[0]
-			}
-		default:
-			log.Printf("[ERROR] Got an unknown interface from Consul Watch %s", masterConsulServiceStatus)
-		}
-
-	}
-
-	go func() {
-		if err := wp.Run(rc.consulClientConfig.Address); err != nil {
-			log.Printf("[ERROR] Error watching for %s changes %s", rc.consulServiceNamePrefix+"-master", err)
-		}
-	}()
-
-	//Check if we should quit
-	//wait forever for a stop signal to happen
-	go func() {
-		<-rc.stopWatchCh
-		log.Printf("[INFO] Stopped watching for %s service changes", rc.consulServiceNamePrefix+"-master")
-		wp.Stop()
-	}()
-
-	return nil
-}
 
 func (rc *resecConfig) Run() {
 	for {
@@ -205,10 +24,12 @@ func (rc *resecConfig) Run() {
 				if err != nil {
 					log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
 				}
+				rc.consulCheckId = ""
 			}
 		}
 
-		if rh.Healthy != rc.lastRedisHelthCheck {
+		if rh.Healthy != rc.lastRedisHealthCheckOK {
+			rc.lastRedisHealthCheckOK = rh.Healthy
 
 			if rh.Healthy {
 				log.Printf("[DEBUG] Redis HealthCheck changed to healthy")
@@ -226,7 +47,7 @@ func (rc *resecConfig) Run() {
 				rc.stopWatchCh <- struct{}{}
 
 			}
-			rc.lastRedisHelthCheck = rh.Healthy
+
 		}
 
 	}
@@ -234,14 +55,17 @@ func (rc *resecConfig) Run() {
 
 func (rc *resecConfig) Stop() {
 	rc.redisMonitorEnabled = false
+	rc.lastRedisHealthCheckOK = false
+	if rc.masterWatchRunning {
+		//Stopping the watch for master
+		rc.stopWatchCh <- struct{}{}
+	}
 	rc.AbortConsulLock()
 
-	log.Println("[ERROR] THere")
-
-	err := rc.consulClient.Agent().ServiceDeregister(rc.consulServiceId)
-	if err != nil {
-		log.Printf("[ERROR] Can't deregister consul service, %s", err)
+	if rc.consulServiceId != "" {
+		err := rc.consulClient.Agent().ServiceDeregister(rc.consulServiceId)
+		if err != nil {
+			log.Printf("[ERROR] Can't deregister consul service, %s", err)
+		}
 	}
-	log.Println("[ERROR] Over THere")
-
 }

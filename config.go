@@ -23,31 +23,12 @@ const (
 	LogLevel            = "LOG_LEVEL"
 )
 
-type consul struct {
-	ClientConfig *consulapi.Config
-	Client       *consulapi.Client
-	ServiceName  string
-	LockKey      string
-	TTL          string
-	CheckId      string
-	ServiceId    string
-}
-
-type resecRedis struct {
-	Addr     string
-	Password string
-	Client   *redis.Client
-	Healthy  bool
-	Health   *redisHealth
-}
-
 type redisHealth struct {
 	Output  string
 	Healthy bool
 }
 
 type resecConfig struct {
-	consulConfig            *consul
 	announceAddr            string
 	announceHost            string
 	announcePort            int
@@ -58,29 +39,26 @@ type resecConfig struct {
 	consulTTL               string
 	consulCheckId           string
 	consulServiceId         string
-	consulLockIsHeld		bool
+	consulLockIsHeld        bool
 	healthCheckInterval     time.Duration
 	healthCheckTimeout      time.Duration
 	logLevel                string
 	redisAddr               string
 	redisPassword           string
 	redisClient             *redis.Client
-	redisHealthy            bool
 	waitingForLock          bool
-	master                  bool
 	redisMonitorEnabled     bool
 	masterConsulServiceCh   chan *consulapi.ServiceEntry
-	stopCh                  chan struct{}
 	stopWatchCh             chan struct{}
 	errCh                   chan error
 	lock                    *consulapi.Lock
 	LockErrorCh             <-chan struct{}
 	lockAbortCh             chan struct{}
 	healthCh                chan string
-	Redis                   *resecRedis
 	redisHealthCh           chan *redisHealth
 	promoteCh               chan bool
-	lastRedisHelthCheck     bool
+	lastRedisHealthCheckOK  bool
+	masterWatchRunning      bool
 }
 
 // defaultConfig returns the default configuration for the ReSeC
@@ -91,16 +69,16 @@ func defaultConfig() *resecConfig {
 		consulLockKey:           "resec/.lock",
 		redisAddr:               "127.0.0.1:6379",
 		masterConsulServiceCh:   make(chan *consulapi.ServiceEntry, 1),
-		stopCh:                  make(chan struct{}),
 		stopWatchCh:             make(chan struct{}, 0),
 		lockAbortCh:             make(chan struct{}),
 		healthCh:                make(chan string),
 		redisHealthCh:           make(chan *redisHealth, 1),
 		promoteCh:               make(chan bool, 1),
-		redisHealthy:            false,
 		logLevel:                "DEBUG",
 		waitingForLock:          false,
+		consulLockIsHeld:        false,
 		redisMonitorEnabled:     true,
+		masterWatchRunning:      false,
 	}
 
 	if logLevel := os.Getenv(LogLevel); logLevel != "" {
@@ -184,8 +162,6 @@ func defaultConfig() *resecConfig {
 		Healthy: false,
 	}
 
-	// Initialise lock hold status as false
-	config.consulLockIsHeld = false
 	// Initialise promote as false
 	config.promoteCh <- false
 

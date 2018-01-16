@@ -26,8 +26,7 @@ func (rc *resecConfig) redisClientInit() {
 func (rc *resecConfig) runAsMaster() {
 	for {
 		if promote := <-rc.promoteCh; promote {
-			rc.stopWatchCh <- struct{}{}
-
+			rc.stopWatchForMaster()
 			rc.promote()
 		}
 	}
@@ -38,7 +37,6 @@ func (rc *resecConfig) runAsSlave() {
 
 	for {
 		currentMaster := <-rc.masterConsulServiceCh
-		log.Println("[INFO] Ok, There's a healthy master in consul, I'm obeying this!")
 
 		// Use master node address if it's registered without service address
 		var masterAddress string
@@ -47,6 +45,8 @@ func (rc *resecConfig) runAsSlave() {
 		} else {
 			masterAddress = currentMaster.Node.Address
 		}
+
+		log.Printf("[INFO] Enslaving redis %s to be slave of %s:%d", rc.redisAddr, masterAddress, currentMaster.Service.Port)
 
 		enslaveErr := rc.redisClient.SlaveOf(masterAddress, strconv.Itoa(currentMaster.Service.Port)).Err()
 
@@ -73,6 +73,8 @@ func (rc *resecConfig) promote() {
 func (rc *resecConfig) redisHealthCheck() {
 
 	for rc.redisMonitorEnabled {
+
+		log.Print("[DEBUG] Checking redis replication status")
 
 		result, err := rc.redisClient.Info("replication").Result()
 

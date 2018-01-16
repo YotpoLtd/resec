@@ -9,6 +9,8 @@ import (
 
 func main() {
 
+	log.Println("[INFO] Start!")
+
 	// init the config
 	resec := defaultConfig()
 

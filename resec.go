@@ -32,20 +32,16 @@ func (rc *resecConfig) Run() {
 			rc.lastRedisHealthCheckOK = rh.Healthy
 
 			if rh.Healthy {
-				log.Printf("[DEBUG] Redis HealthCheck changed to healthy")
-				// run the master service watcher
-				rc.Watch()
+				log.Printf("[INFO] Redis HealthCheck changed to healthy")
+				rc.watchForMaster()
 				go rc.waitForLock()
 				go rc.runAsMaster()
 				go rc.runAsSlave()
 
 			} else {
-				log.Printf("[DEBUG] Redis HealthCheck changed to NOT healthy")
-				// disable Waiting for consul lock
+				log.Printf("[INFO] Redis HealthCheck changed to NOT healthy")
 				rc.AbortConsulLock()
-				//Stopping the watch for master
-				rc.stopWatchCh <- struct{}{}
-
+				rc.stopWatchForMaster()
 			}
 
 		}
@@ -54,18 +50,19 @@ func (rc *resecConfig) Run() {
 }
 
 func (rc *resecConfig) Stop() {
+	log.Printf("[DEBUG] Stopping redis monitor")
 	rc.redisMonitorEnabled = false
+	log.Printf("[DEBUG] Force fail redis health status")
 	rc.lastRedisHealthCheckOK = false
-	if rc.masterWatchRunning {
-		//Stopping the watch for master
-		rc.stopWatchCh <- struct{}{}
-	}
+	rc.stopWatchForMaster()
 	rc.AbortConsulLock()
 
 	if rc.consulServiceId != "" {
+		log.Printf("[INFO] Deregisted service (id [%s])", rc.consulServiceId)
 		err := rc.consulClient.Agent().ServiceDeregister(rc.consulServiceId)
 		if err != nil {
 			log.Printf("[ERROR] Can't deregister consul service, %s", err)
 		}
 	}
+	log.Printf("[INFO] Finish!")
 }

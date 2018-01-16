@@ -74,7 +74,7 @@ func defaultConfig() *resecConfig {
 		healthCh:                make(chan string),
 		redisHealthCh:           make(chan *redisHealth, 1),
 		promoteCh:               make(chan bool, 1),
-		logLevel:                "DEBUG",
+		logLevel:                "INFO",
 		waitingForLock:          false,
 		consulLockIsHeld:        false,
 		redisMonitorEnabled:     true,

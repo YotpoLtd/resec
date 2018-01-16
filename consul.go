@@ -56,13 +56,10 @@ func (rc *resecConfig) waitForLock() {
 }
 
 func (rc *resecConfig) handleWaitForLockError() {
-	for {
-		err := <-rc.LockErrorCh
-		rc.consulLockIsHeld = false
-		log.Printf("[ERROR] Consul lock failed with error %s", err)
-		log.Println("[INFO] Starting new waiter")
-		//go rc.waitForLock()
-	}
+	err := <-rc.LockErrorCh
+	rc.consulLockIsHeld = false
+	log.Printf("[ERROR] Consul lock failed with error %s", err)
+	// rc.waitForLock() // ifi rerun waiter - it opens gazillion sessions
 }
 
 func (rc *resecConfig) AbortConsulLock() {
@@ -74,8 +71,10 @@ func (rc *resecConfig) AbortConsulLock() {
 		}
 	} else {
 		if rc.waitingForLock {
-			log.Println("[DEBUG] Stopping waiting for consul lock")
+			log.Printf("[DEBUG] Stopping wait for consul lock")
 			rc.lockAbortCh <- struct{}{}
+			log.Printf("[INFO] Stopped wait for consul lock")
+
 		}
 	}
 
@@ -105,6 +104,8 @@ func (rc *resecConfig) serviceRegister(replication_role string) error {
 		return err
 	}
 
+	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
+
 	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consulCheckId, nameToRegister, serviceInfo.ID)
 
 	err = rc.consulClient.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
@@ -122,15 +123,14 @@ func (rc *resecConfig) serviceRegister(replication_role string) error {
 		return err
 	}
 
-	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
-
 	return err
 }
 
-func (rc *resecConfig) Watch() error {
+func (rc *resecConfig) watchForMaster() error {
+	serviceToWatch := rc.consulServiceNamePrefix + "-master"
 	params := map[string]interface{}{
 		"type":        "service",
-		"service":     rc.consulServiceNamePrefix + "-master",
+		"service":     serviceToWatch,
 		"passingonly": true,
 	}
 
@@ -143,19 +143,19 @@ func (rc *resecConfig) Watch() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[DEBUG] got an array of ServiceEntry %s", masterConsulServiceStatus)
+			log.Printf("[INFO] Received update for %s from consul", serviceToWatch)
 			masterCount := len(masterConsulServiceStatus)
 			switch {
 			case masterCount > 1:
-				log.Printf("[DEBUG] Found more than one master registered in Consul.")
+				log.Printf("[ERROR] Found more than one master registered in Consul")
 			case masterCount == 0:
-				log.Printf("[DEBUG] No redis master services in Consul.")
+				log.Printf("[INFO] No redis master services in Consul")
 			default:
-				log.Printf("[DEBUG] Found redis master in Consul, %s", masterConsulServiceStatus[0])
+				log.Printf("[INFO] Found redis master in Consul")
 				rc.masterConsulServiceCh <- masterConsulServiceStatus[0]
 			}
 		default:
-			log.Printf("[ERROR] Got an unknown interface from Consul Watch %s", masterConsulServiceStatus)
+			log.Printf("[ERROR] Got an unknown interface from Consul %s", masterConsulServiceStatus)
 		}
 
 	}
@@ -177,4 +177,12 @@ func (rc *resecConfig) Watch() error {
 	}()
 
 	return nil
+}
+
+func (rc *resecConfig) stopWatchForMaster() {
+	log.Printf("[DEBUG] Stopping watching for master changes")
+	if rc.masterWatchRunning {
+		//Stopping the watch for master
+		rc.stopWatchCh <- struct{}{}
+	}
 }

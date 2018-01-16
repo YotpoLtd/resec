@@ -28,8 +28,8 @@ func (rc *resecConfig) Run() {
 			}
 		}
 
-		if rh.Healthy != rc.lastRedisHealthCheckOK {
-			rc.lastRedisHealthCheckOK = rh.Healthy
+		if rh.Healthy != rc.lastRedisHealthCheckStatus {
+			rc.lastRedisHealthCheckStatus = rh.Healthy
 
 			if rh.Healthy {
 				log.Printf("[INFO] Redis HealthCheck changed to healthy")
@@ -53,7 +53,7 @@ func (rc *resecConfig) Stop() {
 	log.Printf("[DEBUG] Stopping redis monitor")
 	rc.redisMonitorEnabled = false
 	log.Printf("[DEBUG] Force fail redis health status")
-	rc.lastRedisHealthCheckOK = false
+	rc.lastRedisHealthCheckStatus = false
 	rc.stopWatchForMaster()
 	rc.AbortConsulLock()
 

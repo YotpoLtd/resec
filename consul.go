@@ -20,7 +20,6 @@ func (rc *resecConfig) consulClientInit() {
 // Wait for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
 func (rc *resecConfig) waitForLock() {
-
 	go rc.handleWaitForLockError()
 
 	rc.waitingForLock = true
@@ -40,6 +39,10 @@ func (rc *resecConfig) waitForLock() {
 		return
 	}
 
+	if rc.LockErrorCh == nil {
+		log.Println("here")
+	}
+
 	rc.LockErrorCh, err = rc.lock.Lock(rc.lockAbortCh)
 	rc.waitingForLock = false
 	if err != nil {
@@ -47,7 +50,7 @@ func (rc *resecConfig) waitForLock() {
 		return
 	}
 
-	if rc.lastRedisHealthCheckOK {
+	if rc.LockErrorCh != nil {
 		log.Println("[INFO] Lock acquired")
 		rc.consulLockIsHeld = true
 		rc.promoteCh <- true

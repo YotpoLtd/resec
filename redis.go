@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/armon/consul-api"
 )
 
 func (rc *resecConfig) redisClientInit() {
@@ -33,29 +34,16 @@ func (rc *resecConfig) runAsMaster() {
 
 }
 
-func (rc *resecConfig) runAsSlave() {
+func (rc *resecConfig) runAsSlave(masterAddress string) {
+	log.Printf("[INFO] Enslaving redis %s to be slave of %s:%d", rc.redisAddr, masterAddress, currentMaster.Service.Port)
 
-	for {
-		currentMaster := <-rc.masterConsulServiceCh
+	enslaveErr := rc.redisClient.SlaveOf(masterAddress, strconv.Itoa(currentMaster.Service.Port)).Err()
 
-		// Use master node address if it's registered without service address
-		var masterAddress string
-		if currentMaster.Service.Address != "" {
-			masterAddress = currentMaster.Service.Address
-		} else {
-			masterAddress = currentMaster.Node.Address
-		}
-
-		log.Printf("[INFO] Enslaving redis %s to be slave of %s:%d", rc.redisAddr, masterAddress, currentMaster.Service.Port)
-
-		enslaveErr := rc.redisClient.SlaveOf(masterAddress, strconv.Itoa(currentMaster.Service.Port)).Err()
-
-		if enslaveErr != nil {
-			log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, currentMaster.Service.Port, enslaveErr)
-		}
-
-		rc.serviceRegister("slave")
+	if enslaveErr != nil {
+		log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, currentMaster.Service.Port, enslaveErr)
 	}
+
+	rc.serviceRegister("slave")
 }
 
 func (rc *resecConfig) promote() {

@@ -43,22 +43,22 @@ type resecConfig struct {
 	healthCheckInterval     time.Duration
 	healthCheckTimeout      time.Duration
 	logLevel                string
-	redisAddr               string
-	redisPassword           string
-	redisClient             *redis.Client
-	waitingForLock          bool
-	redisMonitorEnabled     bool
-	masterConsulServiceCh   chan *consulapi.ServiceEntry
-	stopWatchCh             chan struct{}
-	errCh                   chan error
-	lock                    *consulapi.Lock
-	LockErrorCh             <-chan struct{}
-	lockAbortCh             chan struct{}
-	healthCh                chan string
-	redisHealthCh           chan *redisHealth
-	promoteCh               chan bool
-	lastRedisHealthCheckOK  bool
-	masterWatchRunning      bool
+	redisAddr                  string
+	redisPassword              string
+	redisClient                *redis.Client
+	waitingForLock             bool
+	redisMonitorEnabled        bool
+	masterConsulServiceCh      chan *consulapi.ServiceEntry
+	stopWatchCh                chan struct{}
+	errCh                      chan error
+	lock                       *consulapi.Lock
+	LockErrorCh                <-chan struct{}
+	lockAbortCh                chan struct{}
+	healthCh                   chan string
+	redisHealthCh              chan *redisHealth
+	promoteCh                  chan bool
+	lastRedisHealthCheckStatus bool
+	masterWatchRunning         bool
 }
 
 // defaultConfig returns the default configuration for the ReSeC

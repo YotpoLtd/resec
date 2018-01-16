@@ -3,9 +3,24 @@
 
 ## Description
 
-Resec is a replacement to [Redis Sentinel](https://redis.io/topics/sentinel) for handling high availability for Redis.
+Resec is a successor to [Redis Sentinel](https://redis.io/topics/sentinel) and [redishappy](https://github.com/mdevilliers/redishappy) for handling high availability failover for Redis.
 
+It avoids Redis Sentinel problems of remembering all the sentinels and all the redis servers that ever appeared in the replication cluster.
 
+Resec master election is based on [Consul Locks](https://www.consul.io/docs/commands/lock.html) to provide single redis master instance.
+
+Resec continuously monitors the status of redis instance and if it's alive it starts 2 following processes:
+* Monitor ${CONSUL_SERVICE_PREFIX}-master service for changes
+    * if lock if not acquired, on every change of ${CONSUL_SERVICE_PREFIX}-master it runs *SLAVE OF ${CONSUL_SERVICE_PREFIX}-master*
+* Trying to acquire lock to became master itself
+    * once lock acquired it stops watching for ${CONSUL_SERVICE_PREFIX}-master service changes
+    * promotes redis to be *SLAVE OF NO ONE*
+
+### Services and health checks
+* If redis is healthy resec registers service ${CONSUL_SERVICE_PREFIX}-${REPLICATION_ROLE} with [TTL](https://www.consul.io/docs/agent/checks.html#TTL) health check with TTL twice as big as HEALTHCHECK_INTERVAL and updates consul every HEALTHCHECK_INTERVAL to maintain service in passing state
+
+### Redis Health
+* If redis becomes unhealthy resec will stop both leader election and ${CONSUL_SERVICE_PREFIX}-master service monitoring. As soon as redis will become healthy again, resec will start the operation from the beginning.
 
 ## Usage
 
@@ -20,6 +35,7 @@ HEALTHCHECK_INTERVAL  | 5s             |
 HEALTHCHECK_TIMEOUT   | 2s             |                                                   
 REDIS_ADDR            | 127.0.0.1:6379 |                                                   
 REDIS_PASSWORD        |                |
+LOG_LEVEL             | INFO           | Options are "DEBUG", "INFO", "WARN", "ERROR"
 
 ##### Environment variables to configure communication with consul are similar to [Consul CLI](https://www.consul.io/docs/commands/index.html#environment-variables)
 
@@ -114,8 +130,24 @@ resec:
   container_name: resec
 ```
 
-### Services and health checks
+* with SystemD:
+```
+[Unit]
+Description=resec - redis ha replication daemon
+Requires=network-online.target
+After=network-online.target
 
+[Service]
+EnvironmentFile=-/etc/default/resec
+ExecStart=/usr/local/bin/resec
+KillSignal=SIGQUIT
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+
+```
 
 ## Copyright and license
 

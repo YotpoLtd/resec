@@ -1,94 +1,20 @@
-language:go
+language: go
 
 go:
-- 1.9.x
+  - 1.9.x
 
-stages:
-  - name: deploy
-    if: tag =~ ^v.*
-
-
-jobs:
-  include:
-  - stage: deploy
-    env:
-      - OSARCH=darwin/386
-    script: skip
-    before_deploy:
-    - go get github.com/mitchellh/gox
-    - gox -osarch=$OSARCH -output="build/{{.OS}}/{{.Arch}}/{{.Dir}}" -ldflags="-X main.Version=${TRAVIS_BRANCH}"
-    - find ./build/ -type f | awk -F"/" '{print "zip -j build/go-save_"$3"_"$4".zip "$0}' | bash
-    deploy:
-      provider: releases
-      skip_cleanup: true
-      api_key:
-        secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
-      file_glob: true
-      file: build/*.zip
-      on:
-        repo: YotpoLtd/go-save
-        branch: master
-        tags: true
-
-  - name: deploy darwin/amd64
-    env:
-      - OSARCH=darwin/amd64
-    script: skip
-    before_deploy:
-      - go get github.com/mitchellh/gox
-      - gox -osarch=$OSARCH -output="build/{{.OS}}/{{.Arch}}/{{.Dir}}" -ldflags="-X main.Version=${TRAVIS_BRANCH}"
-      - find ./build/ -type f | awk -F"/" '{print "zip -j build/go-save_"$3"_"$4".zip "$0}' | bash
-    deploy:
-      provider: releases
-      skip_cleanup: true
-      api_key:
-        secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
-      file_glob: true
-      file: build/*.zip
-      on:
-        repo: YotpoLtd/go-save
-        branch: master
-        tags: true
-  - name: deploy linux/386
-    env:
-      - OSARCH=linux/386
-    script: skip
-    before_deploy:
-      - go get github.com/mitchellh/gox
-      - gox -osarch=$OSARCH -output="build/{{.OS}}/{{.Arch}}/{{.Dir}}" -ldflags="-X main.Version=${TRAVIS_BRANCH}"
-      - find ./build/ -type f | awk -F"/" '{print "zip -j build/go-save_"$3"_"$4".zip "$0}' | bash
-    deploy:
-      provider: releases
-      skip_cleanup: true
-      api_key:
-        secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
-      file_glob: true
-      file: build/*.zip
-      on:
-        repo: YotpoLtd/go-save
-        branch: master
-        tags: true
-  - name: deploy linux/amd64
-    env:
-      - OSARCH=linux/amd64
-    script: skip
-    before_deploy:
-      - go get github.com/mitchellh/gox
-      - gox -osarch=$OSARCH -output="build/{{.OS}}/{{.Arch}}/{{.Dir}}" -ldflags="-X main.Version=${TRAVIS_BRANCH}"
-      - find ./build/ -type f | awk -F"/" '{print "zip -j build/go-save_"$3"_"$4".zip "$0}' | bash
-    deploy:
-      provider: releases
-      skip_cleanup: true
-      api_key:
-        secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
-      file_glob: true
-      file: build/*.zip
-      on:
-        repo: YotpoLtd/go-save
-        branch: master
-        tags: true
-
-before_install:
-- go get -u ./...
-install:
-- dep ensure
+script:
+- go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
+- zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}
+deploy:
+  if: tag =~ ^v.*
+  provider: releases
+  skip_cleanup: true
+  api_key:
+    secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
+  file_glob: true
+  file: build/*.zip
+  on:
+    repo: YotpoLtd/resec
+    branch: master
+    tags: true

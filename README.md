@@ -17,10 +17,10 @@ Resec continuously monitors the status of redis instance and if it's alive it st
     * promotes redis to be *SLAVE OF NO ONE*
 
 ### Services and health checks
-* If redis is healthy resec registers service ${CONSUL_SERVICE_PREFIX}-${REPLICATION_ROLE} with [TTL](https://www.consul.io/docs/agent/checks.html#TTL) health check with TTL twice as big as HEALTHCHECK_INTERVAL and updates consul every HEALTHCHECK_INTERVAL to maintain service in passing state
+* Resec registers service ${CONSUL_SERVICE_PREFIX}-${REPLICATION_ROLE} with [TTL](https://www.consul.io/docs/agent/checks.html#TTL) health check with TTL twice as big as HEALTHCHECK_INTERVAL and updates consul every HEALTHCHECK_INTERVAL to maintain service in passing state
 
 ### Redis Health
-* If redis becomes unhealthy resec will stop both leader election and ${CONSUL_SERVICE_PREFIX}-master service monitoring. As soon as redis will become healthy again, resec will start the operation from the beginning.
+* If redis becomes unhealthy resec will stop leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
 
 ## Usage
 
@@ -31,6 +31,8 @@ Environment Variables |  Default       | Description
 ANNOUNCE_ADDR         | :6379          | IP:Port of Redis to be announced                  
 CONSUL_SERVICE_PREFIX | redis          | Prefix will be followed by "-(master|slave)"      
 CONSUL_LOCK_KEY       | resec/.lock    | KV lock location, should be overriden if multiple instances running in the same consul DC
+CONSUL_DEREGISTER_SERVICE_AFTER | 72h |
+CONSUL_LOCK_TTL       | 15s         |
 HEALTHCHECK_INTERVAL  | 5s             |                                                   
 HEALTHCHECK_TIMEOUT   | 2s             |                                                   
 REDIS_ADDR            | 127.0.0.1:6379 |                                                   
@@ -107,13 +109,12 @@ job "resec" {
       }
 
       resources {
-        cpu    = 500
-        memory = 256
+        cpu    = 100
+        memory = 64
         network {
           mbits = 10
         }
       }
-    }
     }
   }
 }

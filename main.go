@@ -2,66 +2,25 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 func main() {
 
 	log.Println("[INFO] Start!")
 
-	// init the config
-	resec := defaultConfig()
+	// init the Config
+	resec := Config()
 
-	resec.redisClientInit()
+	resec.RedisClientInit()
 
-	resec.consulClientInit()
+	resec.ConsulClientInit()
 
-	go resec.redisHealthCheck()
-	go resec.watchForMaster()
+	go resec.RedisHealthCheck()
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+	go resec.WatchForMaster()
 
-	//select {
-	//case <-c:
-	//	log.Printf("[INFO] Caught signal, releasing lock and stopping...")
-	//	resec.Stop()
-	//}
+	defer resec.Stop()
 
+	resec.Start()
 
-	for {
-		select {
-		case <- c:
-			log.Printf("[INFO] Caught signal, releasing lock and stopping...")
-			resec.Stop()
-		case health := <- resec.redisHealthCh:
-			if health.Healthy {
-
-			} else {
-
-			}
-		case currentMaster := <- resec.masterConsulServiceCh:
-			// Use master node address if it's registered without service address
-			if currentMaster.Service.ID == resec.consulServiceId {
-				continue
-			}
-			go resec.waitForLock()
-			var masterAddress string
-			if currentMaster.Service.Address != "" {
-				masterAddress = currentMaster.Service.Address
-			} else {
-				masterAddress = currentMaster.Node.Address
-			}
-			resec.runAsSlave(masterAddress)
-			go resec.waitForLock()
-		case lockStatus := <- resec.lockChannel:
-			// of lock state error ?
-			// if lock accuiered ?
-			// if lock canceled
-
-			resec.runAsMaster()
-		}
-	}
 }

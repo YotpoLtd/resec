@@ -1,79 +1,75 @@
 package main
 
 import (
+	"github.com/go-redis/redis"
 	"log"
 	"strconv"
 	"time"
-
-	"github.com/go-redis/redis"
-	"github.com/armon/consul-api"
 )
 
-func (rc *resecConfig) redisClientInit() {
+func (rc *resecConfig) RedisClientInit() {
 
 	redisOptions := &redis.Options{
-		Addr:        rc.redisAddr,
+		Addr:        rc.redis.Addr,
 		DialTimeout: rc.healthCheckTimeout,
 		ReadTimeout: rc.healthCheckTimeout,
 	}
 
-	if rc.redisPassword != "" {
-		redisOptions.Password = rc.redisPassword
+	if rc.redis.Password != "" {
+		redisOptions.Password = rc.redis.Password
 	}
 
-	rc.redisClient = redis.NewClient(redisOptions)
-}
+	rc.redis.Client = redis.NewClient(redisOptions)
 
-func (rc *resecConfig) runAsMaster() {
-	for {
-		if promote := <-rc.promoteCh; promote {
-			rc.stopWatchForMaster()
-			rc.promote()
-		}
+	err := rc.redis.Client.Ping().Err()
+
+	if err != nil {
+		log.Fatalf("[CRITICAL] Redis is not alive, exiting")
+	} else {
+		log.Println("[DEBUG] Redis is healthy")
 	}
-
 }
 
-func (rc *resecConfig) runAsSlave(masterAddress string) {
-	log.Printf("[INFO] Enslaving redis %s to be slave of %s:%d", rc.redisAddr, masterAddress, currentMaster.Service.Port)
+func (rc *resecConfig) RunAsSlave(masterAddress string, masterPort int) {
+	log.Printf("[DEBUG] Enslaving redis %s to be slave of %s:%d", rc.redis.Addr, masterAddress, masterPort)
 
-	enslaveErr := rc.redisClient.SlaveOf(masterAddress, strconv.Itoa(currentMaster.Service.Port)).Err()
+	enslaveErr := rc.redis.Client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err()
 
 	if enslaveErr != nil {
-		log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, currentMaster.Service.Port, enslaveErr)
+		log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, masterPort, enslaveErr)
 	}
+	log.Printf("[INFO] Enslaved redis %s to be slave of %s:%d", rc.redis.Addr, masterAddress, masterPort)
 
-	rc.serviceRegister("slave")
+	rc.redis.ReplicationStatus = "slave"
 }
 
-func (rc *resecConfig) promote() {
-	promoteErr := rc.redisClient.SlaveOf("no", "one").Err()
+func (rc *resecConfig) RunAsMaster() {
+	promoteErr := rc.redis.Client.SlaveOf("no", "one").Err()
 
 	if promoteErr != nil {
 		log.Printf("[ERROR] Failed to promote  redis to master - %s", promoteErr)
 	} else {
-		rc.serviceRegister("master")
+		rc.redis.ReplicationStatus = "master"
 		log.Println("[INFO] Promoted redis to Master")
 	}
 
 }
 
-func (rc *resecConfig) redisHealthCheck() {
+func (rc *resecConfig) RedisHealthCheck() {
 
-	for rc.redisMonitorEnabled {
+	for {
 
-		log.Print("[DEBUG] Checking redis replication status")
+		log.Println("[DEBUG] Checking redis replication status")
 
-		result, err := rc.redisClient.Info("replication").Result()
+		result, err := rc.redis.Client.Info("replication").Result()
 
 		if err != nil {
-			log.Printf("[ERROR] Can't connect to redis running on %s", rc.redisAddr)
-			rc.redisHealthCh <- &redisHealth{
-				Output:  "",
+			log.Printf("[ERROR] Can't connect to redis running on %s", rc.redis.Addr)
+			rc.redisHealthCh <- &RedisHealth{
 				Healthy: false,
 			}
 		} else {
-			rc.redisHealthCh <- &redisHealth{
+			rc.redisHealthCh <- &RedisHealth{
 				Output:  result,
 				Healthy: true,
 			}

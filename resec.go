@@ -2,64 +2,113 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
-func (rc *resecConfig) Run() {
+func (rc *resecConfig) Start() {
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+
 	for {
+		select {
+		case <-c:
+			log.Printf("[INFO] Caught signal, releasing lock and stopping...")
+			return
+		case health := <-rc.redisHealthCh:
 
-		rh := <-rc.redisHealthCh
-
-		// update Consul Helthcheck
-		if rc.consulCheckId != "" {
-			var err error
-			if rh.Healthy {
-				log.Printf("[DEBUG] Redis health OK, sending update to Consul")
-				err = rc.consulClient.Agent().UpdateTTL(rc.consulCheckId, rh.Output, "pass")
+			// update Consul HealthCheck
+			if rc.consul.CheckId != "" {
+				var err error
+				var status string
+				if health.Healthy {
+					log.Printf("[DEBUG] Redis health OK, sending update to Consul")
+					status = "pass"
+				} else {
+					log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
+					status = "fail"
+				}
+				err = rc.SetConsulCheckStatus(health.Output, status)
 				if err != nil {
 					log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
+					rc.ServiceRegister(rc.redis.ReplicationStatus)
 				}
-			} else {
-				log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
-				err = rc.consulClient.Agent().UpdateTTL(rc.consulCheckId, "", "fail")
-				if err != nil {
-					log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
-				}
-				rc.consulCheckId = ""
-			}
-		}
-
-		if rh.Healthy != rc.lastRedisHealthCheckStatus {
-			rc.lastRedisHealthCheckStatus = rh.Healthy
-
-			if rh.Healthy {
-				log.Printf("[INFO] Redis HealthCheck changed to healthy")
-				rc.watchForMaster()
-				go rc.waitForLock()
-				go rc.runAsMaster()
-				go rc.runAsSlave()
-
-			} else {
-				log.Printf("[INFO] Redis HealthCheck changed to NOT healthy")
-				rc.AbortConsulLock()
-				rc.stopWatchForMaster()
 			}
 
-		}
+			// handle status change
+			if health.Healthy != rc.redis.Healthy {
+				rc.redis.Healthy = health.Healthy
+				if health.Healthy {
+					log.Printf("[INFO] Redis HealthCheck changed to healthy")
+					if rc.redis.ReplicationStatus == "slave" {
+						rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
+					}
+				} else {
+					log.Printf("[INFO] Redis HealthCheck changed to NOT healthy")
+					rc.AbortConsulLock()
+				}
+			}
 
+		case masterConsulServiceInfo := <-rc.masterConsulServiceCh:
+			masterCount := len(masterConsulServiceInfo)
+			switch {
+			case masterCount > 1:
+				log.Printf("[ERROR] Found more than one master registered in Consul")
+				continue
+			case masterCount == 0:
+				if rc.redis.Healthy {
+					log.Printf("[INFO] No redis master services in Consul")
+					if !rc.consul.LockIsWaiting {
+						if !rc.consul.LockIsHeld {
+							go rc.WaitForLock()
+						}
+					}
+				}
+			default:
+				log.Printf("[INFO] Redis master updated in Consul")
+				currentMaster := masterConsulServiceInfo[0]
+				if currentMaster.Service.ID == rc.consul.ServiceId {
+					log.Printf("[DEBUG] Current master is my redis, nothing to do")
+					continue
+				}
+
+				// Use master node address if it's registered without service address
+				if currentMaster.Service.Address != "" {
+					rc.lastKnownMasterAddress = currentMaster.Service.Address
+				} else {
+					rc.lastKnownMasterAddress = currentMaster.Node.Address
+				}
+				rc.lastKnownMasterPort = currentMaster.Service.Port
+				rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
+				rc.ServiceRegister(rc.redis.ReplicationStatus)
+				if !rc.consul.LockIsWaiting {
+					if !rc.consul.LockIsHeld {
+						go rc.WaitForLock()
+					}
+				}
+			}
+		case lockStatus := <-rc.consul.LockStatus:
+			if lockStatus.Acquired {
+				rc.RunAsMaster()
+				rc.ServiceRegister(rc.redis.ReplicationStatus)
+			}
+			if lockStatus.Error != nil {
+				log.Printf("[ERROR] %s", lockStatus.Error)
+				rc.WaitForLock()
+			}
+
+		}
 	}
 }
 
 func (rc *resecConfig) Stop() {
-	log.Printf("[DEBUG] Stopping redis monitor")
-	rc.redisMonitorEnabled = false
-	log.Printf("[DEBUG] Force fail redis health status")
-	rc.lastRedisHealthCheckStatus = false
-	rc.stopWatchForMaster()
 	rc.AbortConsulLock()
 
-	if rc.consulServiceId != "" {
-		log.Printf("[INFO] Deregisted service (id [%s])", rc.consulServiceId)
-		err := rc.consulClient.Agent().ServiceDeregister(rc.consulServiceId)
+	if rc.consul.ServiceId != "" {
+		log.Printf("[INFO] Deregisted service (id [%s])", rc.consul.ServiceId)
+		err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceId)
 		if err != nil {
 			log.Printf("[ERROR] Can't deregister consul service, %s", err)
 		}

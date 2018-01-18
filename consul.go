@@ -75,34 +75,52 @@ func (rc *resecConfig) WaitForLock() {
 }
 
 func (rc *resecConfig) handleWaitForLockError() {
-	_, ok := <-rc.consul.LockErrorCh
+	log.Printf("[DEBUG] Starting Consul Lock Error Handler")
 
-	if !ok {
-		ErrMessage := fmt.Errorf("Consul lock lost or error")
-		log.Printf("[DEBUG] %s", ErrMessage)
-		rc.consul.LockIsWaiting = false
-		rc.consul.LockIsHeld = false
-		rc.consul.LockStatus <- &ConsulLockStatus{
-			Acquired: false,
-			Error:    ErrMessage,
+	rc.consul.LockWaitHandlerRunning = true
+	rc.consul.LockStopWaiterHandlerCh = make(chan bool)
+
+	select {
+	case data, ok := <-rc.consul.LockErrorCh:
+		if !ok {
+			log.Printf("[DEBUG] Lock Error chanel is  closed")
+			ErrMessage := fmt.Errorf("Consul lock lost or error")
+			log.Printf("[DEBUG] %s", ErrMessage)
+			rc.consul.LockIsWaiting = false
+			rc.consul.LockIsHeld = false
+			rc.consul.LockStatus <- &ConsulLockStatus{
+				Acquired: false,
+				Error:    ErrMessage,
+			}
+		} else {
+			log.Printf("[DEBUG] something wrote to lock error channel %v ", data)
 		}
+	case <-rc.consul.LockStopWaiterHandlerCh:
+		rc.consul.LockWaitHandlerRunning = false
+		log.Printf("[DEBUG] Stopped Consul Lock Error handler")
 	}
 }
 
 func (rc *resecConfig) AbortConsulLock() {
+
+	if rc.consul.LockWaitHandlerRunning {
+		log.Printf("[DEBUG] Stopping Consul Lock Error handler")
+		close(rc.consul.LockStopWaiterHandlerCh)
+	}
 	if rc.consul.LockIsHeld {
 		log.Println("[DEBUG] Lock is held, releasing")
 		err := rc.consul.Lock.Unlock()
 		if err != nil {
 			log.Println("[ERROR] Can't release consul lock", err)
+		} else {
+			rc.consul.LockIsHeld = false
 		}
-		rc.consul.LockIsHeld = false
 	} else {
 		if rc.consul.LockIsWaiting {
 			log.Printf("[DEBUG] Stopping wait for consul lock")
 			rc.consul.LockAbortCh <- struct{}{}
+			rc.consul.LockIsWaiting = false
 			log.Printf("[INFO] Stopped wait for consul lock")
-
 		}
 	}
 
@@ -118,6 +136,11 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 		ID:   rc.consul.ServiceId,
 		Port: rc.announcePort,
 		Name: nameToRegister,
+		Check: &consulapi.AgentServiceCheck{
+			TTL:    rc.consul.TTL,
+			Status: "critical",
+			DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
+		},
 	}
 
 	if rc.announceHost != "" {
@@ -133,25 +156,26 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	}
 
 	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
-
-	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
-
-	err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
-		Name:      replication_role + " replication status",
-		ID:        rc.consul.CheckId,
-		ServiceID: rc.consul.ServiceId,
-		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL: rc.consul.TTL,
-			DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
-		},
-	})
-
-	if err != nil {
-		log.Println("[ERROR] Consul Check registration failed", "error", err)
-		return err
-	}
-
-	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+	//
+	//log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+	//
+	//err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
+	//	Name:      replication_role + " replication status",
+	//	ID:        rc.consul.CheckId,
+	//	ServiceID: rc.consul.ServiceId,
+	//	AgentServiceCheck: consulapi.AgentServiceCheck{
+	//		TTL:    rc.consul.TTL,
+	//		Status: "critical",
+	//		DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
+	//	},
+	//})
+	//
+	//if err != nil {
+	//	log.Println("[ERROR] Consul Check registration failed", "error", err)
+	//	return err
+	//}
+	//
+	//log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
 
 	return err
 }

@@ -26,21 +26,23 @@ const (
 )
 
 type Consul struct {
-	ClientConfig           *consulapi.Config
-	Client                 *consulapi.Client
-	ServiceNamePrefix      string
-	DeregisterServiceAfter time.Duration
-	LockAbortCh            chan struct{}
-	LockKey                string
-	LockStatus             chan *ConsulLockStatus
-	LockErrorCh            <-chan struct{}
-	LockIsHeld             bool
-	LockIsWaiting          bool
-	Lock                   *consulapi.Lock
-	LockTTL                time.Duration
-	TTL                    string
-	CheckId                string
-	ServiceId              string
+	ClientConfig            *consulapi.Config
+	Client                  *consulapi.Client
+	ServiceNamePrefix       string
+	DeregisterServiceAfter  time.Duration
+	LockAbortCh             chan struct{}
+	LockKey                 string
+	LockStatus              chan *ConsulLockStatus
+	LockErrorCh             <-chan struct{}
+	LockIsHeld              bool
+	LockIsWaiting           bool
+	LockWaitHandlerRunning  bool
+	LockStopWaiterHandlerCh chan bool
+	Lock                    *consulapi.Lock
+	LockTTL                 time.Duration
+	TTL                     string
+	CheckId                 string
+	ServiceId               string
 }
 
 type ConsulLockStatus struct {

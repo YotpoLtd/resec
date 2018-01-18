@@ -36,7 +36,6 @@ func (rc *resecConfig) Start() {
 					rc.ServiceRegister(rc.redis.ReplicationStatus)
 				}
 			}
-
 			// handle status change
 			if health.Healthy != rc.redis.Healthy {
 				rc.redis.Healthy = health.Healthy
@@ -44,6 +43,11 @@ func (rc *resecConfig) Start() {
 					log.Printf("[INFO] Redis HealthCheck changed to healthy")
 					if rc.redis.ReplicationStatus == "slave" {
 						rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
+					}
+					if !rc.consul.LockIsWaiting {
+						if !rc.consul.LockIsHeld {
+							go rc.WaitForLock()
+						}
 					}
 				} else {
 					log.Printf("[INFO] Redis HealthCheck changed to NOT healthy")
@@ -58,13 +62,15 @@ func (rc *resecConfig) Start() {
 				log.Printf("[ERROR] Found more than one master registered in Consul")
 				continue
 			case masterCount == 0:
+				log.Printf("[INFO] No redis master services in Consul")
 				if rc.redis.Healthy {
-					log.Printf("[INFO] No redis master services in Consul")
 					if !rc.consul.LockIsWaiting {
 						if !rc.consul.LockIsHeld {
 							go rc.WaitForLock()
 						}
 					}
+				} else {
+					log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
 				}
 			default:
 				log.Printf("[INFO] Redis master updated in Consul")

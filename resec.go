@@ -45,8 +45,10 @@ func (rc *resecConfig) Start() {
 						rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
 					}
 					if !rc.consul.LockIsWaiting {
+						log.Printf("[DEBUG] Not waiting for lock")
 						if !rc.consul.LockIsHeld {
-							go rc.WaitForLock()
+							log.Printf("[DEBUG] Lock is not held")
+							go rc.TryWaitForLock()
 						}
 					}
 				} else {
@@ -64,35 +66,30 @@ func (rc *resecConfig) Start() {
 			case masterCount == 0:
 				log.Printf("[INFO] No redis master services in Consul")
 				if rc.redis.Healthy {
-					if !rc.consul.LockIsWaiting {
-						if !rc.consul.LockIsHeld {
-							go rc.WaitForLock()
-						}
-					}
+					go rc.TryWaitForLock()
+
 				} else {
 					log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
 				}
 			default:
-				log.Printf("[INFO] Redis master updated in Consul")
 				currentMaster := masterConsulServiceInfo[0]
-				if currentMaster.Service.ID == rc.consul.ServiceId {
-					log.Printf("[DEBUG] Current master is my redis, nothing to do")
-					continue
-				}
-
-				// Use master node address if it's registered without service address
-				if currentMaster.Service.Address != "" {
-					rc.lastKnownMasterAddress = currentMaster.Service.Address
-				} else {
-					rc.lastKnownMasterAddress = currentMaster.Node.Address
-				}
-				rc.lastKnownMasterPort = currentMaster.Service.Port
-				rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
-				rc.ServiceRegister(rc.redis.ReplicationStatus)
-				if !rc.consul.LockIsWaiting {
-					if !rc.consul.LockIsHeld {
-						go rc.WaitForLock()
+				if rc.lastKnownMaster == nil || currentMaster.Service != rc.lastKnownMaster.Service {
+					rc.lastKnownMaster = currentMaster
+					log.Printf("[INFO] Redis master updated in Consul")
+					if currentMaster.Service.ID == rc.consul.ServiceId {
+						log.Printf("[DEBUG] Current master is my redis, nothing to do")
+						continue
 					}
+					// Use master node address if it's registered without service address
+					if currentMaster.Service.Address != "" {
+						rc.lastKnownMasterAddress = currentMaster.Service.Address
+					} else {
+						rc.lastKnownMasterAddress = currentMaster.Node.Address
+					}
+					rc.lastKnownMasterPort = currentMaster.Service.Port
+					rc.RunAsSlave(rc.lastKnownMasterAddress, rc.lastKnownMasterPort)
+					rc.ServiceRegister(rc.redis.ReplicationStatus)
+					go rc.TryWaitForLock()
 				}
 			}
 		case lockStatus := <-rc.consul.LockStatus:
@@ -102,7 +99,7 @@ func (rc *resecConfig) Start() {
 			}
 			if lockStatus.Error != nil {
 				log.Printf("[ERROR] %s", lockStatus.Error)
-				rc.WaitForLock()
+				rc.TryWaitForLock()
 			}
 
 		}

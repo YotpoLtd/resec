@@ -27,50 +27,60 @@ func (rc *resecConfig) ConsulClientInit() {
 
 // Wait for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
-func (rc *resecConfig) WaitForLock() {
+func (rc *resecConfig) TryWaitForLock() {
+	if !rc.consul.LockIsWaiting {
+		log.Printf("[DEBUG] Not waiting for lock")
+		if !rc.consul.LockIsHeld {
+			log.Printf("[DEBUG] Lock is not held")
 
-	rc.consul.LockIsWaiting = true
-	log.Println("[INFO] Trying to acquire leader lock")
+			rc.consul.LockIsWaiting = true
+			log.Println("[INFO] Trying to acquire leader lock")
 
-	var err error
+			var err error
 
-	rc.consul.Lock, err = rc.consul.Client.LockOpts(&consulapi.LockOptions{
-		Key:         rc.consul.LockKey,
-		SessionName: "resec",
-		SessionTTL:  rc.consul.LockTTL.String(),
-	})
+			rc.consul.Lock, err = rc.consul.Client.LockOpts(&consulapi.LockOptions{
+				Key:         rc.consul.LockKey,
+				SessionName: "resec",
+				SessionTTL:  rc.consul.LockTTL.String(),
+			})
 
-	if err != nil {
-		log.Printf("[ERROR] Failed setting lock options - %s", err)
-		rc.consul.LockIsWaiting = false
-		rc.consul.LockStatus <- &ConsulLockStatus{
-			Acquired: false,
-			Error:    err,
+			if err != nil {
+				log.Printf("[ERROR] Failed setting lock options - %s", err)
+				rc.consul.LockIsWaiting = false
+				rc.consul.LockStatus <- &ConsulLockStatus{
+					Acquired: false,
+					Error:    err,
+				}
+				return
+			}
+
+			rc.consul.LockErrorCh, err = rc.consul.Lock.Lock(rc.consul.LockAbortCh)
+			rc.consul.LockIsWaiting = false
+			if err != nil {
+				log.Printf("[ERROR] Failed to acquire lock - %s", err)
+				rc.consul.LockStatus <- &ConsulLockStatus{
+					Acquired: false,
+					Error:    err,
+				}
+				return
+			}
+
+			//if Lock Error Channel is not closed, means all good and we acquired lock
+			if rc.consul.LockErrorCh != nil {
+				go rc.handleWaitForLockError()
+				log.Println("[INFO] Lock acquired")
+				rc.consul.LockIsWaiting = false
+				rc.consul.LockIsHeld = true
+				rc.consul.LockStatus <- &ConsulLockStatus{
+					Acquired: true,
+					Error:    nil,
+				}
+			}
+		} else {
+			log.Printf("[DEBUG] Already waiting for lock")
 		}
-		return
-	}
-
-	rc.consul.LockErrorCh, err = rc.consul.Lock.Lock(rc.consul.LockAbortCh)
-	rc.consul.LockIsWaiting = false
-	if err != nil {
-		log.Printf("[ERROR] Failed to acquire lock - %s", err)
-		rc.consul.LockStatus <- &ConsulLockStatus{
-			Acquired: false,
-			Error:    err,
-		}
-		return
-	}
-
-	//if Lock Error Channel is not closed, means all good and we acquired lock
-	if rc.consul.LockErrorCh != nil {
-		go rc.handleWaitForLockError()
-		log.Println("[INFO] Lock acquired")
-		rc.consul.LockIsWaiting = false
-		rc.consul.LockIsHeld = true
-		rc.consul.LockStatus <- &ConsulLockStatus{
-			Acquired: true,
-			Error:    nil,
-		}
+	} else {
+		log.Printf("[DEBUG] Lock is already held")
 	}
 }
 
@@ -136,11 +146,6 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 		ID:   rc.consul.ServiceId,
 		Port: rc.announcePort,
 		Name: nameToRegister,
-		Check: &consulapi.AgentServiceCheck{
-			TTL:    rc.consul.TTL,
-			Status: "critical",
-			DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
-		},
 	}
 
 	if rc.announceHost != "" {
@@ -156,26 +161,26 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 	}
 
 	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
-	//
-	//log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
-	//
-	//err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
-	//	Name:      replication_role + " replication status",
-	//	ID:        rc.consul.CheckId,
-	//	ServiceID: rc.consul.ServiceId,
-	//	AgentServiceCheck: consulapi.AgentServiceCheck{
-	//		TTL:    rc.consul.TTL,
-	//		Status: "critical",
-	//		DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
-	//	},
-	//})
-	//
-	//if err != nil {
-	//	log.Println("[ERROR] Consul Check registration failed", "error", err)
-	//	return err
-	//}
-	//
-	//log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+
+	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+
+	err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
+		Name:      replication_role + " replication status",
+		ID:        rc.consul.CheckId,
+		ServiceID: rc.consul.ServiceId,
+		AgentServiceCheck: consulapi.AgentServiceCheck{
+			TTL:    rc.consul.TTL,
+			Status: "critical",
+			DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
+		},
+	})
+
+	if err != nil {
+		log.Println("[ERROR] Consul Check registration failed", "error", err)
+		return err
+	}
+
+	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
 
 	return err
 }

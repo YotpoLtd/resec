@@ -28,7 +28,6 @@ func (rc *resecConfig) ConsulClientInit() {
 // Wait for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
 func (rc *resecConfig) WaitForLock() {
-	go rc.handleWaitForLockError()
 
 	rc.consul.LockIsWaiting = true
 	log.Println("[INFO] Trying to acquire leader lock")
@@ -64,6 +63,7 @@ func (rc *resecConfig) WaitForLock() {
 
 	//if Lock Error Channel is not closed, means all good and we acquired lock
 	if rc.consul.LockErrorCh != nil {
+		go rc.handleWaitForLockError()
 		log.Println("[INFO] Lock acquired")
 		rc.consul.LockIsWaiting = false
 		rc.consul.LockIsHeld = true

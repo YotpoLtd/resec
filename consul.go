@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	consulapi "github.com/hashicorp/consul/api"
 	consulwatch "github.com/hashicorp/consul/watch"
@@ -10,6 +11,7 @@ import (
 
 func (rc *resecConfig) ConsulClientInit() {
 	var err error
+
 	rc.consul.Client, err = consulapi.NewClient(rc.consul.ClientConfig)
 
 	if err != nil {
@@ -38,7 +40,12 @@ func (rc *resecConfig) TryWaitForLock() {
 
 			var err error
 
-			rc.consul.Lock, err = rc.consul.Client.LockOpts(&consulapi.LockOptions{
+			consulNoTimeOutClient, err := consulapi.NewClient(consulapi.DefaultConfig())
+			if err != nil {
+				rc.HandleConsulError(err)
+			}
+
+			rc.consul.Lock, err = consulNoTimeOutClient.LockOpts(&consulapi.LockOptions{
 				Key:         rc.consul.LockKey,
 				SessionName: "resec",
 				SessionTTL:  rc.consul.LockTTL.String(),
@@ -57,7 +64,6 @@ func (rc *resecConfig) TryWaitForLock() {
 			rc.consul.LockErrorCh, err = rc.consul.Lock.Lock(rc.consul.LockAbortCh)
 			rc.consul.LockIsWaiting = false
 			if err != nil {
-				log.Printf("[ERROR] Failed to acquire lock - %s", err)
 				rc.consul.LockStatus <- &ConsulLockStatus{
 					Acquired: false,
 					Error:    err,
@@ -65,7 +71,7 @@ func (rc *resecConfig) TryWaitForLock() {
 				return
 			}
 
-			//if Lock Error Channel is not closed, means all good and we acquired lock
+			//if Lock Error Channel is initialized, means all good and we acquired lock
 			if rc.consul.LockErrorCh != nil {
 				go rc.handleWaitForLockError()
 				log.Println("[INFO] Lock acquired")
@@ -77,10 +83,10 @@ func (rc *resecConfig) TryWaitForLock() {
 				}
 			}
 		} else {
-			log.Printf("[DEBUG] Already waiting for lock")
+			log.Printf("[DEBUG] Lock is already held")
 		}
 	} else {
-		log.Printf("[DEBUG] Lock is already held")
+		log.Printf("[DEBUG] Already waiting for lock")
 	}
 }
 
@@ -177,6 +183,7 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 
 	if err != nil {
 		log.Println("[ERROR] Consul Check registration failed", "error", err)
+		rc.HandleConsulError(err)
 		return err
 	}
 
@@ -206,7 +213,7 @@ func (rc *resecConfig) WatchForMaster() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[INFO] Received update for %s from consul", serviceToWatch)
+			log.Printf("[INFO] Received update for %s from consul: %v", serviceToWatch, masterConsulServiceStatus)
 			rc.masterConsulServiceCh <- masterConsulServiceStatus
 		default:
 			log.Printf("[ERROR] Got an unknown interface from Consul %s", masterConsulServiceStatus)
@@ -221,4 +228,16 @@ func (rc *resecConfig) WatchForMaster() error {
 	}()
 
 	return nil
+}
+
+func (rc *resecConfig) HandleConsulError(err error) {
+
+	//if a, ok := err.(net.Error); ok {
+	//	log.Printf("[ERROR] HANDLECONSULERROR %v %v", a, ok)
+	//}
+	if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "Unexpected response code") {
+		rc.consul.Healthy = false
+		log.Printf("[ERROR] Consul Agent is down")
+	}
+
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -43,6 +44,7 @@ type Consul struct {
 	TTL                     string
 	CheckId                 string
 	ServiceId               string
+	Healthy                 bool
 }
 
 type ConsulLockStatus struct {
@@ -58,32 +60,40 @@ type Redis struct {
 	ReplicationStatus string
 }
 
+type RedisInfo struct {
+	Address string
+	Port    int
+}
+
 type RedisHealth struct {
 	Output  string
 	Healthy bool
 }
 
 type resecConfig struct {
-	consul                 *Consul
-	redis                  *Redis
-	announceAddr           string
-	announceHost           string
-	announcePort           int
-	healthCheckInterval    time.Duration
-	healthCheckTimeout     time.Duration
-	logLevel               string
-	masterConsulServiceCh  chan []*consulapi.ServiceEntry
-	redisHealthCh          chan *RedisHealth
-	lastKnownMaster        *consulapi.ServiceEntry
-	lastKnownMasterAddress string
-	lastKnownMasterPort    int
+	consul                *Consul
+	redis                 *Redis
+	announceAddr          string
+	announceHost          string
+	announcePort          int
+	healthCheckInterval   time.Duration
+	healthCheckTimeout    time.Duration
+	logLevel              string
+	masterConsulServiceCh chan []*consulapi.ServiceEntry
+	redisHealthCh         chan *RedisHealth
+	lastKnownMaster       *consulapi.ServiceEntry
+	lastKnownMasterInfo   RedisInfo
 }
 
 // Config returns the default configuration for the ReSeC
 func Config() *resecConfig {
 	config := &resecConfig{
 		consul: &Consul{
-			ClientConfig:      consulapi.DefaultConfig(),
+			ClientConfig: &consulapi.Config{
+				HttpClient: &http.Client{
+					Timeout: time.Second * 1,
+				},
+			},
 			ServiceNamePrefix: "redis",
 			LockKey:           "resec/.lock",
 			LockStatus:        make(chan *ConsulLockStatus, 1),

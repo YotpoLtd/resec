@@ -1,5 +1,6 @@
 # Resec - Consul based highly available replication agent
 
+* Chat: [Gitter](https://gitter.im/YotpoLtd-resec/Lobby)
 
 ## Description
 

@@ -9,20 +9,9 @@ import (
 	consulwatch "github.com/hashicorp/consul/watch"
 )
 
-func (rc *resecConfig) ConsulClientInit() {
-	var err error
-
-	rc.consul.Client, err = consulapi.NewClient(rc.consul.ClientConfig)
-
-	if err != nil {
-		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)
-	}
-
-}
-
 // Wait for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
-func (rc *resecConfig) TryWaitForLock() {
+func (rc *Resec) TryWaitForLock() {
 	if !rc.consul.LockIsWaiting {
 		log.Printf("[DEBUG] Not waiting for lock")
 		if !rc.consul.LockIsHeld {
@@ -83,7 +72,7 @@ func (rc *resecConfig) TryWaitForLock() {
 	}
 }
 
-func (rc *resecConfig) handleWaitForLockError() {
+func (rc *Resec) handleWaitForLockError() {
 	log.Printf("[DEBUG] Starting Consul Lock Error Handler")
 
 	rc.consul.LockWaitHandlerRunning = true
@@ -110,7 +99,7 @@ func (rc *resecConfig) handleWaitForLockError() {
 	}
 }
 
-func (rc *resecConfig) AbortConsulLock() {
+func (rc *Resec) AbortConsulLock() {
 
 	if rc.consul.LockWaitHandlerRunning {
 		log.Printf("[DEBUG] Stopping Consul Lock Error handler")
@@ -135,14 +124,14 @@ func (rc *resecConfig) AbortConsulLock() {
 
 }
 
-func (rc *resecConfig) ServiceRegister(replication_role string) error {
+func (rc *Resec) ServiceRegister(replicationRole string) error {
 
-	nameToRegister := rc.consul.ServiceNamePrefix + "-" + replication_role
-	rc.consul.ServiceId = nameToRegister + ":" + rc.redis.Addr
-	rc.consul.CheckId = rc.consul.ServiceId + ":replication-status-check"
+	nameToRegister := rc.consul.ServiceNamePrefix + "-" + replicationRole
+	rc.consul.ServiceID = nameToRegister + ":" + rc.redis.Addr
+	rc.consul.CheckID = rc.consul.ServiceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
-		ID:   rc.consul.ServiceId,
+		ID:   rc.consul.ServiceID,
 		Port: rc.announcePort,
 		Name: nameToRegister,
 	}
@@ -155,18 +144,18 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 
 	err := rc.consul.Client.Agent().ServiceRegister(serviceInfo)
 	if err != nil {
-		log.Println("[ERROR] Consul Service registration failed", "error", err)
+		rc.HandleConsulError(err)
 		return err
 	}
 
 	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
 
-	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckID, nameToRegister, serviceInfo.ID)
 
 	err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
-		Name:      replication_role + " replication status",
-		ID:        rc.consul.CheckId,
-		ServiceID: rc.consul.ServiceId,
+		Name:      replicationRole + " replication status",
+		ID:        rc.consul.CheckID,
+		ServiceID: rc.consul.ServiceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
 			TTL:    rc.consul.TTL,
 			Status: "critical",
@@ -180,16 +169,16 @@ func (rc *resecConfig) ServiceRegister(replication_role string) error {
 		return err
 	}
 
-	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckId, nameToRegister, serviceInfo.ID)
+	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckID, nameToRegister, serviceInfo.ID)
 
 	return err
 }
 
-func (rc *resecConfig) SetConsulCheckStatus(output, status string) error {
-	return rc.consul.Client.Agent().UpdateTTL(rc.consul.CheckId, output, status)
+func (rc *Resec) SetConsulCheckStatus(output, status string) error {
+	return rc.consul.Client.Agent().UpdateTTL(rc.consul.CheckID, output, status)
 }
 
-func (rc *resecConfig) WatchForMaster() error {
+func (rc *Resec) WatchForMaster() error {
 	serviceToWatch := rc.consul.ServiceNamePrefix + "-master"
 	params := map[string]interface{}{
 		"type":        "service",
@@ -206,7 +195,7 @@ func (rc *resecConfig) WatchForMaster() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[INFO] Received update for %s from consul: %v", serviceToWatch, masterConsulServiceStatus)
+			log.Printf("[INFO] Received update for %s from consul", serviceToWatch)
 			rc.masterConsulServiceCh <- masterConsulServiceStatus
 		default:
 			log.Printf("[ERROR] Got an unknown interface from Consul %s", masterConsulServiceStatus)
@@ -223,7 +212,7 @@ func (rc *resecConfig) WatchForMaster() error {
 	return nil
 }
 
-func (rc *resecConfig) HandleConsulError(err error) {
+func (rc *Resec) HandleConsulError(err error) {
 
 	if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "Unexpected response code") {
 		rc.consul.Healthy = false

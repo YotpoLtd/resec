@@ -8,12 +8,8 @@ func main() {
 
 	log.Println("[INFO] Start!")
 
-	// init the Config
-	resec := Config()
-
-	resec.RedisClientInit()
-
-	resec.ConsulClientInit()
+	// init the Init
+	resec := Init()
 
 	go resec.RedisHealthCheck()
 

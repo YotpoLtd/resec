@@ -9,7 +9,7 @@ import (
 	consulapi "github.com/hashicorp/consul/api"
 )
 
-func (rc *resecConfig) Start() {
+func (rc *Resec) Start() {
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
@@ -25,7 +25,7 @@ func (rc *resecConfig) Start() {
 			if rc.consul.Healthy {
 
 				// update Consul HealthCheck
-				if rc.consul.CheckId != "" {
+				if rc.consul.CheckID != "" {
 					var err error
 					var status string
 					if health.Healthy {
@@ -53,7 +53,10 @@ func (rc *resecConfig) Start() {
 				if health.Healthy {
 					log.Printf("[INFO] Redis HealthCheck changed to healthy")
 					if rc.redis.ReplicationStatus == "slave" {
-						rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
+						err := rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
+						if err != nil {
+							continue
+						}
 					}
 					go rc.TryWaitForLock()
 				} else {
@@ -86,28 +89,47 @@ func (rc *resecConfig) Start() {
 				if currentMasterInfo != rc.lastKnownMasterInfo {
 					log.Printf("[INFO] Redis master updated in Consul")
 					rc.lastKnownMasterInfo = currentMasterInfo
-					if currentMaster.Service.ID == rc.consul.ServiceId {
+					rc.redis.ReplicationStatus = "slave"
+					if currentMaster.Service.ID == rc.consul.ServiceID {
 						log.Printf("[DEBUG] Current master is my redis, nothing to do")
 						continue
 					}
-					rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
-					rc.ServiceRegister(rc.redis.ReplicationStatus)
-					go rc.TryWaitForLock()
+
+					enslaveErr := rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
+					if enslaveErr != nil {
+						log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port, enslaveErr)
+					}
+					registerErr := rc.ServiceRegister(rc.redis.ReplicationStatus)
+					if registerErr != nil {
+						log.Printf("[ERROR] Consul Service registration failed - %s", registerErr)
+					}
+					// if non of the above didn't failed
+					if enslaveErr == nil && registerErr == nil {
+						go rc.TryWaitForLock()
+					}
 				}
 			}
 		case lockStatus := <-rc.consul.LockStatus:
 			log.Printf("[DEBUG] Read from lock channel")
 
 			if lockStatus.Acquired {
+				rc.redis.ReplicationStatus = "master"
 				// deregister slave before promoting to master
 				if rc.redis.ReplicationStatus == "slave" {
-					err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceId)
+					err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceID)
 					if err != nil {
 						log.Printf("[ERROR] Can't deregister consul service, %s", err)
 					}
 				}
-				rc.RunAsMaster()
-				rc.ServiceRegister(rc.redis.ReplicationStatus)
+				if rc.redis.Healthy {
+					err := rc.RunAsMaster()
+					if err != nil {
+						log.Printf("[ERROR] Failed to promote  redis to master - %s", err)
+						rc.AbortConsulLock()
+						continue
+					}
+					rc.ServiceRegister(rc.redis.ReplicationStatus)
+				}
 			}
 			if lockStatus.Error != nil {
 				log.Printf("[ERROR] Failed to acquire lock - %s", lockStatus.Error)
@@ -120,7 +142,7 @@ func (rc *resecConfig) Start() {
 	}
 }
 
-func (rc *resecConfig) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) RedisInfo {
+func (rc *Resec) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) RedisInfo {
 
 	var redisInfo RedisInfo
 	// Use master node address if it's registered without service address
@@ -135,12 +157,12 @@ func (rc *resecConfig) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry
 
 }
 
-func (rc *resecConfig) Stop() {
+func (rc *Resec) Stop() {
 	rc.AbortConsulLock()
 
-	if rc.consul.ServiceId != "" {
-		log.Printf("[INFO] Deregisted service (id [%s])", rc.consul.ServiceId)
-		err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceId)
+	if rc.consul.ServiceID != "" {
+		log.Printf("[INFO] Deregisted service (id [%s])", rc.consul.ServiceID)
+		err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceID)
 		if err != nil {
 			log.Printf("[ERROR] Can't deregister consul service, %s", err)
 		}

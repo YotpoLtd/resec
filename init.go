@@ -42,8 +42,8 @@ type Consul struct {
 	Lock                    *consulapi.Lock
 	LockTTL                 time.Duration
 	TTL                     string
-	CheckId                 string
-	ServiceId               string
+	CheckID                 string
+	ServiceID               string
 	Healthy                 bool
 }
 
@@ -70,7 +70,7 @@ type RedisHealth struct {
 	Healthy bool
 }
 
-type resecConfig struct {
+type Resec struct {
 	consul                *Consul
 	redis                 *Redis
 	announceAddr          string
@@ -85,9 +85,9 @@ type resecConfig struct {
 	lastKnownMasterInfo   RedisInfo
 }
 
-// Config returns the default configuration for the ReSeC
-func Config() *resecConfig {
-	config := &resecConfig{
+// Init returns the default configuration for the ReSeC
+func Init() *Resec {
+	config := &Resec{
 		consul: &Consul{
 			ClientConfig: &consulapi.Config{
 				HttpClient: &http.Client{
@@ -130,7 +130,7 @@ func Config() *resecConfig {
 		healthCheckIntervalDuration, err := time.ParseDuration(healthCheckInterval)
 
 		if err != nil {
-			log.Println("[ERROR] Trouble parsing %s [%s]", HealthCheckInterval, healthCheckInterval)
+			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckInterval, healthCheckInterval)
 		}
 		config.healthCheckInterval = healthCheckIntervalDuration
 	} else {
@@ -143,7 +143,7 @@ func Config() *resecConfig {
 	if healthCheckTimeout := os.Getenv(HealthCheckTimeout); healthCheckTimeout != "" {
 		healthCheckTimeOutDuration, err := time.ParseDuration(healthCheckTimeout)
 		if err != nil {
-			log.Println("[ERROR] Trouble parsing %s [%s]", HealthCheckTimeout, healthCheckTimeout)
+			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckTimeout, healthCheckTimeout)
 		}
 		config.healthCheckTimeout = healthCheckTimeOutDuration
 	} else {
@@ -153,7 +153,7 @@ func Config() *resecConfig {
 	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
 		consulDeregisterServiceAfterDuration, err := time.ParseDuration(consulDeregisterServiceAfter)
 		if err != nil {
-			log.Println("[ERROR] Trouble parsing %s [%s]", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter)
+			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter)
 		}
 		config.healthCheckTimeout = consulDeregisterServiceAfterDuration
 	} else {
@@ -163,7 +163,7 @@ func Config() *resecConfig {
 	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
 		consuLockTTLDuration, err := time.ParseDuration(consuLockTTL)
 		if err != nil {
-			log.Println("[ERROR] Trouble parsing %s [%s]", ConsulLockTTL, consuLockTTL)
+			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulLockTTL, consuLockTTL)
 		}
 		if consuLockTTLDuration < time.Second*15 {
 			log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
@@ -206,6 +206,24 @@ func Config() *resecConfig {
 
 	// initialise redis as unhealthy
 	config.redis.Healthy = false
+
+	redisOptions := &redis.Options{
+		Addr:        config.redis.Addr,
+		DialTimeout: config.healthCheckTimeout,
+		ReadTimeout: config.healthCheckTimeout,
+	}
+
+	if config.redis.Password != "" {
+		redisOptions.Password = config.redis.Password
+	}
+
+	config.redis.Client = redis.NewClient(redisOptions)
+
+	config.consul.Client, err = consulapi.NewClient(config.consul.ClientConfig)
+
+	if err != nil {
+		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)
+	}
 
 	return config
 }

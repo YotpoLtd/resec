@@ -1,54 +1,36 @@
 package main
 
 import (
-	"github.com/go-redis/redis"
 	"log"
 	"strconv"
 	"time"
 )
 
-func (rc *resecConfig) RedisClientInit() {
-
-	redisOptions := &redis.Options{
-		Addr:        rc.redis.Addr,
-		DialTimeout: rc.healthCheckTimeout,
-		ReadTimeout: rc.healthCheckTimeout,
-	}
-
-	if rc.redis.Password != "" {
-		redisOptions.Password = rc.redis.Password
-	}
-
-	rc.redis.Client = redis.NewClient(redisOptions)
-
-}
-
-func (rc *resecConfig) RunAsSlave(masterAddress string, masterPort int) {
+func (rc *Resec) RunAsSlave(masterAddress string, masterPort int) error {
 	log.Printf("[DEBUG] Enslaving redis %s to be slave of %s:%d", rc.redis.Addr, masterAddress, masterPort)
 
 	enslaveErr := rc.redis.Client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err()
 
 	if enslaveErr != nil {
-		log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", masterAddress, masterPort, enslaveErr)
+		return enslaveErr
 	}
 	log.Printf("[INFO] Enslaved redis %s to be slave of %s:%d", rc.redis.Addr, masterAddress, masterPort)
-
-	rc.redis.ReplicationStatus = "slave"
+	return nil
 }
 
-func (rc *resecConfig) RunAsMaster() {
+func (rc *Resec) RunAsMaster() error {
 	promoteErr := rc.redis.Client.SlaveOf("no", "one").Err()
 
 	if promoteErr != nil {
-		log.Printf("[ERROR] Failed to promote  redis to master - %s", promoteErr)
+		return promoteErr
 	} else {
-		rc.redis.ReplicationStatus = "master"
 		log.Println("[INFO] Promoted redis to Master")
 	}
 
+	return nil
 }
 
-func (rc *resecConfig) RedisHealthCheck() {
+func (rc *Resec) RedisHealthCheck() {
 
 	for {
 

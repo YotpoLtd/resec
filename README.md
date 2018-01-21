@@ -1,6 +1,6 @@
 # Resec - Consul based highly available Redis replication agent
 
-* [![Gitter](https://badges.gitter.im/YotpoLtd/resec.svg)](https://gitter.im/YotpoLtd/resec?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+* [![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 ## Description
 

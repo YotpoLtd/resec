@@ -18,13 +18,6 @@ func (rc *resecConfig) ConsulClientInit() {
 		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)
 	}
 
-	leader, err := rc.consul.Client.Status().Leader()
-
-	if err != nil {
-		log.Fatalf("[CRITICAL] Consul: %s", err)
-	} else {
-		log.Printf("[DEBUG] Consul cluser is healthy, leader is %s ", leader)
-	}
 }
 
 // Wait for lock to the Consul KV key.
@@ -232,9 +225,6 @@ func (rc *resecConfig) WatchForMaster() error {
 
 func (rc *resecConfig) HandleConsulError(err error) {
 
-	//if a, ok := err.(net.Error); ok {
-	//	log.Printf("[ERROR] HANDLECONSULERROR %v %v", a, ok)
-	//}
 	if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "Unexpected response code") {
 		rc.consul.Healthy = false
 		log.Printf("[ERROR] Consul Agent is down")

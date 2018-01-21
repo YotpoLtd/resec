@@ -21,13 +21,6 @@ func (rc *resecConfig) RedisClientInit() {
 
 	rc.redis.Client = redis.NewClient(redisOptions)
 
-	err := rc.redis.Client.Ping().Err()
-
-	if err != nil {
-		log.Fatalf("[CRITICAL] Redis is not alive, exiting")
-	} else {
-		log.Println("[DEBUG] Redis is healthy")
-	}
 }
 
 func (rc *resecConfig) RunAsSlave(masterAddress string, masterPort int) {

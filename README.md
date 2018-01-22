@@ -56,7 +56,7 @@ The Consul ACL token is passed as the environment variable `CONSUL_HTTP_TOKEN` .
 If the Consul cluster being used is running ACLs; the following ACL policy will allow Replicator the required access to perform all functions based on its default configuration:
 
 ```hcl
-key "resec/.lock" {
+key "resec/" {
   policy = "write"
 }
 session "" {
@@ -109,7 +109,7 @@ job "resec" {
       }
       
       env {
-        CONSUL_HTTP_ADDR = "${NOMAD_IP_redis}:8500"
+        CONSUL_HTTP_ADDR = "http://${attr.unique.network.ip-address}:8500"
         REDIS_ADDR = "${NOMAD_ADDR_redis_db}"
       }
 

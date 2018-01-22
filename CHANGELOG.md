@@ -1,5 +1,5 @@
 
-## 0.1.0 (UNRELEASED)
+## 0.1.0 (January 22, 2018)
 
  * Initial release
 

@@ -1,17 +1,14 @@
 language: go
-
 go:
-  - 1.9.x
-
+- 1.9.x
 script:
 - go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
 - zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}
 deploy:
-  if: tag =~ ^v.*
   provider: releases
   skip_cleanup: true
   api_key:
-    secure: Y5PuKVV8732JTNQuZFb/wkzueEd4E6syn+1+9x2Iz+Jx3pqDx2xCXFMDlBFyG4PBHOOir7kU09wClhKZNjQMDwKg24mPS5dCnCkc70hjhzlzJ+dfRReDDkv8f8L/ZMFXi+als2q4OSYcq8sedn5pEBNMVhUAhRm63Lce4MlNmB+rRMPjDffE3dEXVtKRvjX/wMCVOQPgUid8or7on22Qzcn1K8i4XYG2eUgGe4ztrnCOzDYfOnzgV3sUukra7oECwCTOhDXE6WgF1VfhRbKwetAtd19+gklKHQp4hueWmzIoyHxCflXP4CbBuS/6OyLCb2DgIc1CvtvW446zm9MJG1t5onRHaQCRaj53UteDH1q0DtfXJV4Ks1le84giVYwMbMP6lne93KVd95yKycSJO02shlaDbfyXMEkFyQlzs4xhb11dlVSqhw1PvnBIIvfDSiIi/y6sCEwZNpTNYG8/qgNUHQKhzXdXolIwwWcxILRUciygp04jRyI4HzNx5xm43DWr3vSMD6I6f/4CcczzrDAwMOEtoYJ1HjKOKrrRk/AqakySzupP/HIhmb/3R/GFch/9YkcnzUcCaGboudQjs0faERGlzlZ+oliXS/O5dCOzoD6+rY/DPapIKdoCzoeod0j+o94VAbLmwoO20ACqURfuYs0n6+nG2qbe2pshnSM=
+    secure: jqxQ6YECY5GYYbgV8rV0HCeXSdbVT/6MV+B+WOO7gdkDvaP63JRGgQdOPcwgfIrvnuqoCGTO/cm5V0JlkaslqI18SUe5q1T1vWeiEMMHYvv63RQVPMNvFmV29XO5H4gdQdia8kiEZ6LfhwIlaAqcf/vEGb4a1Q8Lxvrexvi7VzwtyY7uT2CnJdeqnikBhE3JBSWBzxM5JOrGkiq8olVw7wD9VsqIsZeD3uS78vX25RRdg8xQSTSna7KGFSRJqema1t0HDgQA9w8X4t6nbFOMCagfSVLth9iKV7UcpeHPUkoubzZQPHaK/No+p7EbHrsPjx+i9J0XeMfuDqb2qaymZ/NXO1UBfysl8EViB5rPvWf49OvqQACZgJLa+iTDaWe22OgrIrvNURsTCtqhRL3FBdutiaeh+0JkP3hrKjoRGfcrwoBJcQAY24ztZcC2Zw1z9c/05pg5DO7oL2fJPxKAlRUE7JXBx/of83KkY2I64ZulLfcwwmVPQNcIfq1PCqC7s/AmCueWwsn0qq1grK0uawIlzFD+cg9Zjhk6z+h2AdIsdu4n1tzMLuw+3f12hePm6dorqIstqzZufxTWDZClbE2zbiz1XoE0mSAwD0Ge9UzoJiyNXiBR85REJvZWybNUWr6aJFWWWSkowRtV0splb4bbxxnt5zJx8292746OUCU=
   file_glob: true
   file: build/*.zip
   on:

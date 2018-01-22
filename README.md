@@ -1,4 +1,4 @@
-[![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+[![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Go Report Card](https://goreportcard.com/badge/github.com/YotpoLtd/resec)](https://goreportcard.com/report/github.com/YotpoLtd/resec) [![Build Status](https://travis-ci.org/YotpoLtd/resec.svg?branch=master)](https://travis-ci.org/YotpoLtd/resec)
 
 <p align="center">
   <img src="https://s.gravatar.com/avatar/96b073f48aae741171d137f21c849d84?s=160" alt="Resec - Consul based highly available Redis replication agent" />

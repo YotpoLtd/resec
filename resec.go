@@ -89,7 +89,6 @@ func (rc *Resec) Start() {
 				if currentMasterInfo != rc.lastKnownMasterInfo {
 					log.Printf("[INFO] Redis master updated in Consul")
 					rc.lastKnownMasterInfo = currentMasterInfo
-					rc.redis.ReplicationStatus = "slave"
 					if currentMaster.Service.ID == rc.consul.ServiceID {
 						log.Printf("[DEBUG] Current master is my redis, nothing to do")
 						continue
@@ -99,6 +98,7 @@ func (rc *Resec) Start() {
 					if enslaveErr != nil {
 						log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port, enslaveErr)
 					}
+					rc.redis.ReplicationStatus = "slave"
 					registerErr := rc.ServiceRegister(rc.redis.ReplicationStatus)
 					if registerErr != nil {
 						log.Printf("[ERROR] Consul Service registration failed - %s", registerErr)
@@ -113,11 +113,11 @@ func (rc *Resec) Start() {
 			log.Printf("[DEBUG] Read from lock channel")
 
 			if lockStatus.Acquired {
-				rc.redis.ReplicationStatus = "master"
 				// deregister slave before promoting to master
 				if rc.redis.ReplicationStatus == "slave" {
 					err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceID)
 					if err != nil {
+						rc.HandleConsulError(err)
 						log.Printf("[ERROR] Can't deregister consul service, %s", err)
 					}
 				}
@@ -128,13 +128,22 @@ func (rc *Resec) Start() {
 						rc.AbortConsulLock()
 						continue
 					}
+					rc.redis.ReplicationStatus = "master"
 					rc.ServiceRegister(rc.redis.ReplicationStatus)
 				}
 			}
 			if lockStatus.Error != nil {
-				log.Printf("[ERROR] Failed to acquire lock - %s", lockStatus.Error)
+				log.Printf("[ERROR] %s", lockStatus.Error)
 				rc.HandleConsulError(lockStatus.Error)
 				if rc.consul.Healthy {
+					if rc.redis.ReplicationStatus == "master" {
+						// Failing master check in consul
+						consulCheckUpdateErr := rc.SetConsulCheckStatus("Lock lost or error", "fail")
+						rc.HandleConsulError(consulCheckUpdateErr)
+						// invalidating CheckID to avoid redis healthcheck to update master service
+						rc.consul.CheckID = ""
+						rc.redis.ReplicationStatus = ""
+					}
 					go rc.TryWaitForLock()
 				}
 			}

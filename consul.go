@@ -148,7 +148,7 @@ func (rc *Resec) ServiceRegister(replicationRole string) error {
 		return err
 	}
 
-	log.Printf("[INFO] Registed service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
+	log.Printf("[INFO] Registered service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
 
 	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckID, nameToRegister, serviceInfo.ID)
 
@@ -214,9 +214,12 @@ func (rc *Resec) WatchForMaster() error {
 
 func (rc *Resec) HandleConsulError(err error) {
 
-	if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "Unexpected response code") {
-		rc.consul.Healthy = false
-		log.Printf("[ERROR] Consul Agent is down")
+	if err != nil {
+
+		if strings.Contains(err.Error(), "dial tcp") {
+			rc.consul.Healthy = false
+			log.Printf("[ERROR] Consul Agent is down")
+		}
 	}
 
 }

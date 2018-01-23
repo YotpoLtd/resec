@@ -14,9 +14,9 @@ It avoids Redis Sentinel problems of remembering all the sentinels and all the r
 
 Resec master election is based on [Consul Locks](https://www.consul.io/docs/commands/lock.html) to provide single redis master instance.
 
-Resec continuously monitors the status of redis instance and if it's alive it starts 2 following processes:
+Resec continuously monitors the status of redis instance and if it's alive, It starts 2 following processes:
 * Monitor ${CONSUL_SERVICE_PREFIX}-master service for changes
-    * if lock if not acquired, on every change of ${CONSUL_SERVICE_PREFIX}-master it runs *SLAVE OF ${CONSUL_SERVICE_PREFIX}-master*
+    * if lock is not acquired, on every change of ${CONSUL_SERVICE_PREFIX}-master it runs *SLAVE OF ${CONSUL_SERVICE_PREFIX}-master*
 * Trying to acquire lock to became master itself
     * once lock acquired it stops watching for ${CONSUL_SERVICE_PREFIX}-master service changes
     * promotes redis to be *SLAVE OF NO ONE*
@@ -25,7 +25,7 @@ Resec continuously monitors the status of redis instance and if it's alive it st
 * Resec registers service ${CONSUL_SERVICE_PREFIX}-${REPLICATION_ROLE} with [TTL](https://www.consul.io/docs/agent/checks.html#TTL) health check with TTL twice as big as HEALTHCHECK_INTERVAL and updates consul every HEALTHCHECK_INTERVAL to maintain service in passing state
 
 ### Redis Health
-* If redis becomes unhealthy resec will stop leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
+* If redis becomes unhealthy resec will stop the leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
 
 ## Usage
 
@@ -48,7 +48,7 @@ LOG_LEVEL             | INFO           | Options are "DEBUG", "INFO", "WARN", "E
 
 ### Permissions
 
-Resec requires permissions to Consul in order to function correctly.
+Resec requires permissions for Consul in order to function correctly.
 The Consul ACL token is passed as the environment variable `CONSUL_HTTP_TOKEN` .
 
 #### Consul ACL Token Permissions

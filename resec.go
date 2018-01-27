@@ -9,6 +9,7 @@ import (
 	consulapi "github.com/hashicorp/consul/api"
 )
 
+//Start starts the procedure
 func (rc *Resec) Start() {
 
 	c := make(chan os.Signal, 1)
@@ -151,6 +152,7 @@ func (rc *Resec) Start() {
 	}
 }
 
+// ParseMasterInfo parses consulServiceInfo
 func (rc *Resec) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) RedisInfo {
 
 	var redisInfo RedisInfo
@@ -166,6 +168,7 @@ func (rc *Resec) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) Redi
 
 }
 
+//Stop stops the procedure
 func (rc *Resec) Stop() {
 	rc.AbortConsulLock()
 

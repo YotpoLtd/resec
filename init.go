@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/logutils"
 )
 
+// Environment variables keys
 const (
 	AnnounceAddr                 = "ANNOUNCE_ADDR"
 	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
@@ -26,6 +27,7 @@ const (
 	LogLevel                     = "LOG_LEVEL"
 )
 
+// Consul struct description
 type Consul struct {
 	ClientConfig            *consulapi.Config
 	Client                  *consulapi.Client
@@ -47,11 +49,13 @@ type Consul struct {
 	Healthy                 bool
 }
 
+// ConsulLockStatus struct description
 type ConsulLockStatus struct {
 	Acquired bool
 	Error    error
 }
 
+// Redis struct description
 type Redis struct {
 	Addr              string
 	Password          string
@@ -60,16 +64,19 @@ type Redis struct {
 	ReplicationStatus string
 }
 
+// RedisInfo struct description
 type RedisInfo struct {
 	Address string
 	Port    int
 }
 
+// RedisHealth struct description
 type RedisHealth struct {
 	Output  string
 	Healthy bool
 }
 
+// Resec struct description
 type Resec struct {
 	consul                *Consul
 	redis                 *Redis

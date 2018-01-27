@@ -9,7 +9,7 @@ import (
 	consulwatch "github.com/hashicorp/consul/watch"
 )
 
-// Wait for lock to the Consul KV key.
+// TryWaitForLock waits for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
 func (rc *Resec) TryWaitForLock() {
 	if !rc.consul.LockIsWaiting {
@@ -99,6 +99,7 @@ func (rc *Resec) handleWaitForLockError() {
 	}
 }
 
+// AbortConsulLock stops consul lock handler")
 func (rc *Resec) AbortConsulLock() {
 
 	if rc.consul.LockWaitHandlerRunning {
@@ -124,6 +125,7 @@ func (rc *Resec) AbortConsulLock() {
 
 }
 
+// ServiceRegister registers a service in consul
 func (rc *Resec) ServiceRegister(replicationRole string) error {
 
 	nameToRegister := rc.consul.ServiceNamePrefix + "-" + replicationRole
@@ -174,10 +176,12 @@ func (rc *Resec) ServiceRegister(replicationRole string) error {
 	return err
 }
 
+// SetConsulCheckStatus sets consul status check
 func (rc *Resec) SetConsulCheckStatus(output, status string) error {
 	return rc.consul.Client.Agent().UpdateTTL(rc.consul.CheckID, output, status)
 }
 
+// WatchForMaster starts watching procedure
 func (rc *Resec) WatchForMaster() error {
 	serviceToWatch := rc.consul.ServiceNamePrefix + "-master"
 	params := map[string]interface{}{
@@ -212,6 +216,7 @@ func (rc *Resec) WatchForMaster() error {
 	return nil
 }
 
+// HandleConsulError is the error handler
 func (rc *Resec) HandleConsulError(err error) {
 
 	if err != nil {

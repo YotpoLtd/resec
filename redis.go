@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// RunAsSlave sets the instance to be a slave for the master
 func (rc *Resec) RunAsSlave(masterAddress string, masterPort int) error {
 	log.Printf("[DEBUG] Enslaving redis %s to be slave of %s:%d", rc.redis.Addr, masterAddress, masterPort)
 
@@ -18,18 +19,20 @@ func (rc *Resec) RunAsSlave(masterAddress string, masterPort int) error {
 	return nil
 }
 
+// RunAsMaster sets the instance to be the master
 func (rc *Resec) RunAsMaster() error {
 	promoteErr := rc.redis.Client.SlaveOf("no", "one").Err()
 
 	if promoteErr != nil {
 		return promoteErr
-	} else {
-		log.Println("[INFO] Promoted redis to Master")
 	}
+
+	log.Println("[INFO] Promoted redis to Master")
 
 	return nil
 }
 
+// RedisHealthCheck checks redis replication status
 func (rc *Resec) RedisHealthCheck() {
 
 	for {

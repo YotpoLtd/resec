@@ -17,11 +17,14 @@ import (
 const (
 	AnnounceAddr                 = "ANNOUNCE_ADDR"
 	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
+	ConsulServiceName            = "CONSUL_SERVICE_NAME"
 	ConsulLockKey                = "CONSUL_LOCK_KEY"
 	ConsulDeregisterServiceAfter = "CONSUL_DEREGISTER_SERVICE_AFTER"
 	ConsulLockTTL                = "CONSUL_LOCK_TTL"
 	HealthCheckInterval          = "HEALTHCHECK_INTERVAL"
 	HealthCheckTimeout           = "HEATHCHECK_TIMEOUT"
+	MasterTags                   = "MASTER_TAGS"
+	SlaveTags                    = "SLAVE_TAGS"
 	RedisAddr                    = "REDIS_ADDR"
 	RedisPassword                = "REDIS_PASSWORD"
 	LogLevel                     = "LOG_LEVEL"
@@ -31,6 +34,7 @@ const (
 type Consul struct {
 	ClientConfig            *consulapi.Config
 	Client                  *consulapi.Client
+	ServiceName             string
 	ServiceNamePrefix       string
 	DeregisterServiceAfter  time.Duration
 	LockAbortCh             chan struct{}
@@ -43,6 +47,7 @@ type Consul struct {
 	LockStopWaiterHandlerCh chan bool
 	Lock                    *consulapi.Lock
 	LockTTL                 time.Duration
+	Tags                    map[string][]string
 	TTL                     string
 	CheckID                 string
 	ServiceID               string
@@ -105,6 +110,7 @@ func Init() *Resec {
 			LockKey:           "resec/.lock",
 			LockStatus:        make(chan *ConsulLockStatus, 1),
 			LockAbortCh:       make(chan struct{}, 1),
+			Tags:              make(map[string][]string),
 		},
 		redis: &Redis{
 			Addr: "127.0.0.1:6379",
@@ -125,8 +131,22 @@ func Init() *Resec {
 	}
 	log.SetOutput(filter)
 
-	if consulServiceName := os.Getenv(ConsulServicePrefix); consulServiceName != "" {
-		config.consul.ServiceNamePrefix = consulServiceName
+	// Prefer CONSUL_SERVICE_NAME over CONSUL_SERVICE_PREFIX
+	if consulServiceName := os.Getenv(ConsulServiceName); consulServiceName != "" {
+		config.consul.ServiceName = consulServiceName
+	} else if consulServicePrefix := os.Getenv(ConsulServicePrefix); consulServicePrefix != "" {
+		config.consul.ServiceNamePrefix = consulServicePrefix
+	}
+
+	// Fail if CONSUL_SERVICE_NAME is used and no MASTER_TAGS are provided
+	if masterTags := os.Getenv(MasterTags); masterTags != "" {
+		config.consul.Tags["master"] = strings.Split(masterTags, ",")
+	} else if config.consul.ServiceName != "" {
+		log.Fatalf("[FATAL] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
+	}
+
+	if slaveTags := os.Getenv(SlaveTags); slaveTags != "" {
+		config.consul.Tags["slave"] = strings.Split(slaveTags, ",")
 	}
 
 	if consulLockKey := os.Getenv(ConsulLockKey); consulLockKey != "" {

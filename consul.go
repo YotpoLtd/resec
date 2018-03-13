@@ -128,7 +128,12 @@ func (rc *Resec) AbortConsulLock() {
 // ServiceRegister registers a service in consul
 func (rc *Resec) ServiceRegister(replicationRole string) error {
 
-	nameToRegister := rc.consul.ServiceNamePrefix + "-" + replicationRole
+	nameToRegister := rc.consul.ServiceName
+
+	if nameToRegister == "" {
+		nameToRegister = rc.consul.ServiceNamePrefix + "-" + replicationRole
+	}
+
 	rc.consul.ServiceID = nameToRegister + ":" + rc.redis.Addr
 	rc.consul.CheckID = rc.consul.ServiceID + ":replication-status-check"
 
@@ -136,6 +141,7 @@ func (rc *Resec) ServiceRegister(replicationRole string) error {
 		ID:   rc.consul.ServiceID,
 		Port: rc.announcePort,
 		Name: nameToRegister,
+		Tags: rc.consul.Tags[replicationRole],
 	}
 
 	if rc.announceHost != "" {
@@ -183,11 +189,15 @@ func (rc *Resec) SetConsulCheckStatus(output, status string) error {
 
 // WatchForMaster starts watching procedure
 func (rc *Resec) WatchForMaster() error {
-	serviceToWatch := rc.consul.ServiceNamePrefix + "-master"
 	params := map[string]interface{}{
 		"type":        "service",
-		"service":     serviceToWatch,
 		"passingonly": true,
+	}
+	if rc.consul.ServiceName == "" {
+		params["service"] = rc.consul.ServiceNamePrefix + "-master"
+	} else {
+		params["tag"] = rc.consul.Tags["master"][0]
+		params["service"] = rc.consul.ServiceName
 	}
 
 	wp, err := consulwatch.Parse(params)
@@ -199,7 +209,7 @@ func (rc *Resec) WatchForMaster() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[INFO] Received update for %s from consul", serviceToWatch)
+			log.Printf("[INFO] Received update for master from consul")
 			rc.masterConsulServiceCh <- masterConsulServiceStatus
 		default:
 			log.Printf("[ERROR] Got an unknown interface from Consul %s", masterConsulServiceStatus)

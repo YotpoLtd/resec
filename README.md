@@ -33,11 +33,14 @@ Resec continuously monitors the status of redis instance and if it's alive, It s
 
 Environment Variables |  Default       | Description                                       
 ----------------------| ---------------| ------------------------------------------------- 
-ANNOUNCE_ADDR         | :6379          | IP:Port of Redis to be announced                  
-CONSUL_SERVICE_PREFIX | redis          | Prefix will be followed by "-(master|slave)"      
+ANNOUNCE_ADDR         | :6379          | IP:Port of Redis to be announced
+CONSUL_SERVICE_NAME   |                | Consul service name for tag based service discovery
+CONSUL_SERVICE_PREFIX | redis          | Name Prefix, will be followed by "-(master/slave)", ignored if CONSUL_SERVICE_NAME is used     
 CONSUL_LOCK_KEY       | resec/.lock    | KV lock location, should be overriden if multiple instances running in the same consul DC
-CONSUL_DEREGISTER_SERVICE_AFTER | 72h |
-CONSUL_LOCK_TTL       | 15s         |
+CONSUL_DEREGISTER_SERVICE_AFTER | 72h  |
+CONSUL_LOCK_TTL       | 15s            |
+MASTER_TAGS           |                | Comma separated list of tags to be added to master instance
+SLAVE_TAGS            |                | Comma separated list of tags to be added to slave instance
 HEALTHCHECK_INTERVAL  | 5s             |                                                   
 HEALTHCHECK_TIMEOUT   | 2s             |                                                   
 REDIS_ADDR            | 127.0.0.1:6379 |                                                   

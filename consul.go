@@ -128,11 +128,10 @@ func (rc *Resec) AbortConsulLock() {
 // ServiceRegister registers a service in consul
 func (rc *Resec) ServiceRegister(replicationRole string) error {
 
-	var nameToRegister string
-	if rc.consul.ServiceName == "" {
+	nameToRegister := rc.consul.ServiceName
+
+	if nameToRegister == "" {
 		nameToRegister = rc.consul.ServiceNamePrefix + "-" + replicationRole
-	} else {
-		nameToRegister = rc.consul.ServiceName
 	}
 
 	rc.consul.ServiceID = nameToRegister + ":" + rc.redis.Addr

@@ -1,6 +1,6 @@
 language: go
 go:
-- 1.9.x
+- 1.10.x
 script:
 - go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
 - zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}

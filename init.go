@@ -208,9 +208,9 @@ func Init() *Resec {
 		config.redis.Password = redisPassword
 	}
 
-	// If CONSUL_ANNOUNCE_ADDRESS is set it will be used for registration in consul
+	// If ANNOUNCE_ADDR is set it will be used for registration in consul
 	// otherwise if redis address is provided - it will be used for registration in consul
-	// if redis address is localhost only prot will be announced to the consul
+	// if redis address is localhost only port will be announced to the consul
 
 	if announceAddr := os.Getenv(AnnounceAddr); announceAddr != "" {
 		config.announceAddr = announceAddr

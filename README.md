@@ -15,14 +15,23 @@ It avoids Redis Sentinel problems of remembering all the sentinels and all the r
 Resec master election is based on [Consul Locks](https://www.consul.io/docs/commands/lock.html) to provide single redis master instance.
 
 Resec continuously monitors the status of redis instance and if it's alive, It starts 2 following processes:
-* Monitor ${CONSUL_SERVICE_PREFIX}-master service for changes
-    * if lock is not acquired, on every change of ${CONSUL_SERVICE_PREFIX}-master it runs *SLAVE OF ${CONSUL_SERVICE_PREFIX}-master*
+* Monitor service of *master* for changes
+    * if lock is not acquired, on every change of master it runs *SLAVE OF `Master.Address`*
 * Trying to acquire lock to became master itself
-    * once lock acquired it stops watching for ${CONSUL_SERVICE_PREFIX}-master service changes
+    * once lock acquired it stops watching for master service changes
     * promotes redis to be *SLAVE OF NO ONE*
 
 ### Services and health checks
-* Resec registers service ${CONSUL_SERVICE_PREFIX}-${REPLICATION_ROLE} with [TTL](https://www.consul.io/docs/agent/checks.html#TTL) health check with TTL twice as big as HEALTHCHECK_INTERVAL and updates consul every HEALTHCHECK_INTERVAL to maintain service in passing state
+Resec registers service with [TTL](https://www.consul.io/docs/agent/checkshtml#TTL) health check with TTL twice as big as `HEALTHCHECK_INTERVAL` and updates consul every `HEALTHCHECK_INTERVAL` to maintain service in passing state
+
+There are 2 options to work with services:
+* Use `CONSUL_SERVICE_NAME` for tag based master/slave discovery
+  * `MASTER_TAGS` must be provided for ability to watch master instance for changes.
+* Use `CONSUL_SERVICE_PREFIX` for service name only based discovery
+  * services in consul will look like `CONSUL_SERVICE_PREFIX`-`Replication.Role`
+
+* If `ANNOUNCE_ADDR` is set it will be used for registration in consul, if it's not provided `REDIS_ADDR` will be used for registration in consul.
+  * If `REDIS_ADDR` is localhost, only port will be announced to the consul.
 
 ### Redis Health
 * If redis becomes unhealthy resec will stop the leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
@@ -33,7 +42,7 @@ Resec continuously monitors the status of redis instance and if it's alive, It s
 
 Environment Variables |  Default       | Description                                       
 ----------------------| ---------------| ------------------------------------------------- 
-ANNOUNCE_ADDR         | :6379          | IP:Port of Redis to be announced
+ANNOUNCE_ADDR         |                | IP:Port of Redis to be announced, by default service will be registered wi
 CONSUL_SERVICE_NAME   |                | Consul service name for tag based service discovery
 CONSUL_SERVICE_PREFIX | redis          | Name Prefix, will be followed by "-(master/slave)", ignored if CONSUL_SERVICE_NAME is used     
 CONSUL_LOCK_KEY       | resec/.lock    | KV lock location, should be overriden if multiple instances running in the same consul DC
@@ -89,10 +98,21 @@ job "resec" {
     task "redis" {
       driver = "docker"
       config {
-        image = "redis"
+        image = "redis:alpine"
+        command = "redis-server"
+        args = [
+          "/local/redis.conf"
+        ]
         port_map {
           db = 6379
         }
+      }
+      // Let Redis know how much memory he can use not to be killed by OOM
+      template {
+        data = <<EORC
+maxmemory {{ env "NOMAD_MEMORY_LIMIT" | parseInt | subtract 16 }}mb
+EORC
+        destination   = "local/redis.conf"
       }
 
       resources {

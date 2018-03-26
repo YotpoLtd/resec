@@ -9,175 +9,214 @@ import (
 	consulapi "github.com/hashicorp/consul/api"
 )
 
-//Start starts the procedure
-func (rc *Resec) Start() {
-
+//start starts the procedure
+func (rc *resec) start() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 
 	for {
 		select {
+		// got signal from the OS
 		case <-c:
-			log.Printf("[INFO] Caught signal, releasing lock and stopping...")
+			log.Printf("[INFO] Caught signal, stopping worker loop")
 			return
-		case health := <-rc.redisHealthCh:
-			log.Printf("[DEBUG] Read from redis health channel")
 
-			if rc.consul.Healthy {
+		// got an update on redis replication status
+		case update, ok := <-rc.redisReplicationCh:
+			if !ok {
+				log.Println("[ERROR] Redis replication channel was closed, shutting down")
+				return
+			}
 
-				// update Consul HealthCheck
-				if rc.consul.CheckID != "" {
-					var err error
-					var status string
-					if health.Healthy {
-						log.Printf("[DEBUG] Redis health OK, sending update to Consul")
-						status = "pass"
-					} else {
-						log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
-						status = "fail"
-					}
-					err = rc.SetConsulCheckStatus(health.Output, status)
-					if err != nil {
-						rc.HandleConsulError(err)
-						log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
-						if rc.consul.Healthy {
-							rc.ServiceRegister(rc.redis.ReplicationStatus)
-						}
-					}
+			log.Printf("[DEBUG] Got redis replication status update")
+
+			if rc.consul.healthy {
+				// if we don't have any check id, we haven't registered our service yet
+				// let's do that first
+				if rc.consul.checkID == "" {
+					rc.registerService()
+				}
+
+				var status string
+				if update.healthy {
+					log.Printf("[DEBUG] Redis health OK, sending update to Consul")
+					status = "pass"
+				} else {
+					log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
+					status = "fail"
+				}
+
+				if err := rc.setConsulCheckStatus(update.output, status); err != nil {
+					rc.handleConsulError(err)
+					log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
 				}
 			} else {
-				log.Printf("[DEBUG] Consul is not healthy, skipping service check update")
+				log.Printf("[INFO] Consul is not healthy, skipping service check update")
 			}
-			// handle status change
-			if health.Healthy != rc.redis.Healthy {
-				rc.redis.Healthy = health.Healthy
-				if health.Healthy {
-					log.Printf("[INFO] Redis HealthCheck changed to healthy")
-					if rc.redis.ReplicationStatus == "slave" {
-						err := rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
-						if err != nil {
-							continue
-						}
-					}
-					go rc.TryWaitForLock()
-				} else {
-					log.Printf("[INFO] Redis HealthCheck changed to NOT healthy")
-					rc.AbortConsulLock()
+
+			// no change in health
+			if update.healthy == rc.redis.healthy {
+				continue
+			}
+
+			rc.redis.healthy = update.healthy
+
+			// our state is now unhealthy, release the consul lock so someone else can
+			// acquire the consul leadership and become redis master
+			if !update.healthy {
+				log.Printf("[INFO] Redis replication status changed to NOT healthy")
+				rc.releaseConsulLock()
+				continue
+			}
+
+			log.Printf("[INFO] Redis replication status changed to healthy")
+			if rc.redis.replicationStatus == "slave" {
+				if err := rc.runAsSlave(rc.lastKnownMasterInfo.address, rc.lastKnownMasterInfo.port); err != nil {
+					log.Println(err)
+					continue
 				}
 			}
 
-		case masterConsulServiceInfo := <-rc.masterConsulServiceCh:
-			log.Printf("[DEBUG] Read from master channel")
-			rc.consul.Healthy = true
-			masterCount := len(masterConsulServiceInfo)
+			go rc.acquireConsulLeadership()
+
+		case update, ok := <-rc.consulMasterServiceCh:
+			if !ok {
+				log.Println("[ERROR] Consul master service channel was closed, shutting down")
+				return
+			}
+
+			log.Printf("[DEBUG] Got consul master service status update")
+			rc.consul.healthy = true
+			masterCount := len(update)
+
 			switch {
+			// no master means we can attempt to acquire leadership
+			case masterCount == 0:
+				log.Printf("[INFO] No redis master services in Consul")
+				if rc.redis.healthy {
+					go rc.acquireConsulLeadership()
+					continue
+				}
+				log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
+
+			// multiple masters is not good
 			case masterCount > 1:
 				log.Printf("[ERROR] Found more than one master registered in Consul")
 				continue
-			case masterCount == 0:
-				log.Printf("[INFO] No redis master services in Consul")
-				if rc.redis.Healthy {
-					go rc.TryWaitForLock()
 
-				} else {
-					log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
+			// a single master was found
+			case masterCount == 1:
+				currentMaster := update[0]
+				currentMasterInfo := rc.parseMasterInfo(currentMaster)
+
+				// no change in master data, nothing for us to do here
+				if rc.lastKnownMasterInfo == currentMasterInfo {
+					continue
 				}
-			default:
-				currentMaster := masterConsulServiceInfo[0]
 
-				currentMasterInfo := rc.ParseMasterInfo(currentMaster)
+				rc.lastKnownMasterInfo = currentMasterInfo
 
-				if currentMasterInfo != rc.lastKnownMasterInfo {
-					log.Printf("[INFO] Redis master updated in Consul")
-					rc.lastKnownMasterInfo = currentMasterInfo
-					if currentMaster.Service.ID == rc.consul.ServiceID {
-						log.Printf("[DEBUG] Current master is my redis, nothing to do")
-						continue
-					}
-
-					enslaveErr := rc.RunAsSlave(rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port)
-					if enslaveErr != nil {
-						log.Printf("[ERROR] Failed to enslave redis to %s:%d - %s", rc.lastKnownMasterInfo.Address, rc.lastKnownMasterInfo.Port, enslaveErr)
-					}
-					rc.redis.ReplicationStatus = "slave"
-					registerErr := rc.ServiceRegister(rc.redis.ReplicationStatus)
-					if registerErr != nil {
-						log.Printf("[ERROR] Consul Service registration failed - %s", registerErr)
-					}
-					// if non of the above didn't failed
-					if enslaveErr == nil && registerErr == nil {
-						go rc.TryWaitForLock()
-					}
+				log.Printf("[INFO] Redis master updated in Consul")
+				if currentMaster.Service.ID == rc.consul.serviceID {
+					log.Printf("[DEBUG] Current master is my redis, nothing to do")
+					continue
 				}
+
+				// todo(jippi): if we can't enslave our redis, we shouldn't try to do any further work
+				//              especially not updating our consul catalog entry
+				if err := rc.runAsSlave(rc.lastKnownMasterInfo.address, rc.lastKnownMasterInfo.port); err != nil {
+					log.Println(err)
+					continue
+				}
+
+				// change our internal state to being a slave
+				rc.redis.replicationStatus = "slave"
+				if err := rc.registerService(); err != nil {
+					log.Printf("[ERROR] Consul Service registration failed - %s", err)
+					continue
+				}
+
+				// if we are enslaved and our status is published in consul, lets go back to trying
+				// to acquire leadership / master role as well
+				go rc.acquireConsulLeadership()
 			}
-		case lockStatus := <-rc.consul.LockStatus:
+
+		// if our consul lock status has changed
+		case update := <-rc.consul.lockStatusCh:
 			log.Printf("[DEBUG] Read from lock channel")
 
-			if lockStatus.Acquired {
+			if update.acquired {
 				// deregister slave before promoting to master
-				if rc.redis.ReplicationStatus == "slave" {
-					err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceID)
-					if err != nil {
-						rc.HandleConsulError(err)
+				if rc.redis.replicationStatus == "slave" {
+					if err := rc.consul.client.Agent().ServiceDeregister(rc.consul.serviceID); err != nil {
+						rc.handleConsulError(err)
 						log.Printf("[ERROR] Can't deregister consul service, %s", err)
+						// todo(jippi): if we can't deregister our self, this can get super messy, should we exit here?
 					}
 				}
-				if rc.redis.Healthy {
-					err := rc.RunAsMaster()
-					if err != nil {
-						log.Printf("[ERROR] Failed to promote  redis to master - %s", err)
-						rc.AbortConsulLock()
+
+				if rc.redis.healthy {
+					if err := rc.runAsMaster(); err != nil {
+						log.Printf("[ERROR] Failed to promote redis to master - %s", err)
+						rc.releaseConsulLock()
 						continue
 					}
-					rc.redis.ReplicationStatus = "master"
-					rc.ServiceRegister(rc.redis.ReplicationStatus)
+
+					rc.redis.replicationStatus = "master"
+					rc.registerService()
 				}
 			}
-			if lockStatus.Error != nil {
-				log.Printf("[ERROR] %s", lockStatus.Error)
-				rc.HandleConsulError(lockStatus.Error)
-				if rc.consul.Healthy {
-					if rc.redis.ReplicationStatus == "master" {
-						// Failing master check in consul
-						consulCheckUpdateErr := rc.SetConsulCheckStatus("Lock lost or error", "fail")
-						rc.HandleConsulError(consulCheckUpdateErr)
-						// invalidating CheckID to avoid redis healthcheck to update master service
-						rc.consul.CheckID = ""
-						rc.redis.ReplicationStatus = ""
-					}
-					go rc.TryWaitForLock()
+
+			if update.err != nil {
+				log.Printf("[ERROR] %s", update.err)
+				rc.handleConsulError(update.err)
+
+				if !rc.consul.healthy {
+					return
 				}
+
+				if rc.redis.replicationStatus == "master" {
+					// Failing master check in consul
+					if err := rc.setConsulCheckStatus("Lock lost or error", "fail"); err != nil {
+						rc.handleConsulError(err)
+					}
+
+					// invalidating CheckID to avoid redis healthcheck to update master service
+					rc.consul.checkID = ""
+					rc.redis.replicationStatus = ""
+				}
+
+				go rc.acquireConsulLeadership()
 			}
 		}
 	}
 }
 
-// ParseMasterInfo parses consulServiceInfo
-func (rc *Resec) ParseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) RedisInfo {
+// parseMasterInfo parses consulServiceInfo
+func (rc *resec) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redisInfo {
+	info := redisInfo{
+		address: consulServiceInfo.Node.Address,
+		port:    consulServiceInfo.Service.Port,
+	}
 
-	var redisInfo RedisInfo
 	// Use master node address if it's registered without service address
 	if consulServiceInfo.Service.Address != "" {
-		redisInfo.Address = consulServiceInfo.Service.Address
-	} else {
-		redisInfo.Address = consulServiceInfo.Node.Address
+		info.address = consulServiceInfo.Service.Address
 	}
-	redisInfo.Port = consulServiceInfo.Service.Port
 
-	return redisInfo
-
+	return info
 }
 
-//Stop stops the procedure
-func (rc *Resec) Stop() {
-	rc.AbortConsulLock()
+//stop stops the procedure
+func (rc *resec) stop() {
+	rc.releaseConsulLock()
 
-	if rc.consul.ServiceID != "" {
-		log.Printf("[INFO] Deregisted service (id [%s])", rc.consul.ServiceID)
-		err := rc.consul.Client.Agent().ServiceDeregister(rc.consul.ServiceID)
-		if err != nil {
+	if rc.consul.serviceID != "" {
+		log.Printf("[INFO] Deregisted service (id [%s])", rc.consul.serviceID)
+		if err := rc.consul.client.Agent().ServiceDeregister(rc.consul.serviceID); err != nil {
 			log.Printf("[ERROR] Can't deregister consul service, %s", err)
 		}
 	}
+
 	log.Printf("[INFO] Finish!")
 }

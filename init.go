@@ -182,7 +182,7 @@ func Init() *Resec {
 		if err != nil {
 			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter)
 		}
-		config.healthCheckTimeout = consulDeregisterServiceAfterDuration
+		config.consul.DeregisterServiceAfter = consulDeregisterServiceAfterDuration
 	} else {
 		config.consul.DeregisterServiceAfter = time.Hour * 72
 	}

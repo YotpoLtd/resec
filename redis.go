@@ -41,18 +41,12 @@ func (rc *resec) watchRedisReplicationStatus() {
 			result, err := rc.redis.client.Info("replication").Result()
 			if err != nil {
 				log.Printf("[ERROR] Can't connect to redis running on %s", rc.redis.address)
-				rc.redisReplicationCh <- &redisHealth{
-					output:  fmt.Sprintf("Can't connect to redis running on %s", rc.redis.address),
-					healthy: false,
-				}
-
-				timer.Reset(rc.healthCheckInterval)
-				continue
+				result = fmt.Sprintf("Can't connect to redis running on %s", rc.redis.address)
 			}
 
 			rc.redisReplicationCh <- &redisHealth{
 				output:  result,
-				healthy: true,
+				healthy: err == nil,
 			}
 
 			timer.Reset(rc.healthCheckInterval)

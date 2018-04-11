@@ -9,139 +9,153 @@ import (
 	consulwatch "github.com/hashicorp/consul/watch"
 )
 
-// TryWaitForLock waits for lock to the Consul KV key.
+var (
+	consulClient *consulapi.Client
+)
+
+// acquireConsulLeadership waits for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
-func (rc *Resec) TryWaitForLock() {
-	if !rc.consul.LockIsWaiting {
-		log.Printf("[DEBUG] Not waiting for lock")
-		if !rc.consul.LockIsHeld {
-			log.Printf("[DEBUG] Lock is not held")
-
-			rc.consul.LockIsWaiting = true
-			log.Println("[INFO] Trying to acquire leader lock")
-
-			var err error
-
-			consulNoTimeOutClient, err := consulapi.NewClient(consulapi.DefaultConfig())
-			if err != nil {
-				rc.HandleConsulError(err)
-			}
-
-			rc.consul.Lock, err = consulNoTimeOutClient.LockOpts(&consulapi.LockOptions{
-				Key:         rc.consul.LockKey,
-				SessionName: "resec",
-				SessionTTL:  rc.consul.LockTTL.String(),
-			})
-
-			if err != nil {
-				log.Printf("[ERROR] Failed setting lock options - %s", err)
-				rc.consul.LockIsWaiting = false
-				rc.consul.LockStatus <- &ConsulLockStatus{
-					Acquired: false,
-					Error:    err,
-				}
-				return
-			}
-
-			rc.consul.LockErrorCh, err = rc.consul.Lock.Lock(rc.consul.LockAbortCh)
-			rc.consul.LockIsWaiting = false
-			if err != nil {
-				rc.consul.LockStatus <- &ConsulLockStatus{
-					Acquired: false,
-					Error:    err,
-				}
-				return
-			}
-
-			//if Lock Error Channel is initialized, means all good and we acquired lock
-			if rc.consul.LockErrorCh != nil {
-				go rc.handleWaitForLockError()
-				log.Println("[INFO] Lock acquired")
-				rc.consul.LockIsWaiting = false
-				rc.consul.LockIsHeld = true
-				rc.consul.LockStatus <- &ConsulLockStatus{
-					Acquired: true,
-					Error:    nil,
-				}
-			}
-		} else {
-			log.Printf("[DEBUG] Lock is already held")
-		}
-	} else {
-		log.Printf("[DEBUG] Already waiting for lock")
+func (rc *resec) acquireConsulLeadership() {
+	if rc.consul.lockIsHeld {
+		log.Printf("[DEBUG] Lock is already held")
+		return
 	}
+
+	if rc.consul.lockIsWaiting {
+		log.Printf("[DEBUG] Already waiting for lock")
+		return
+	}
+
+	var err error
+	rc.consul.lockIsWaiting = true
+
+	log.Printf("[INFO] Trying to acquire consul leadership")
+
+	// create the consul client if it doesn't exist
+	if consulClient == nil {
+		consulClient, err = consulapi.NewClient(consulapi.DefaultConfig())
+		if err != nil {
+			rc.handleConsulError(err)
+			return
+		}
+	}
+
+	rc.consul.lock, err = consulClient.LockOpts(rc.consulLockOptions())
+	if err != nil {
+		log.Printf("[ERROR] Failed setting lock options - %s", err)
+		rc.consul.lockStatusCh <- &consulLockStatus{
+			acquired: false,
+			err:      err,
+		}
+		rc.consul.lockIsWaiting = false
+		return
+	}
+
+	rc.consul.lockIsWaiting = false
+	rc.consul.lockErrorCh, err = rc.consul.lock.Lock(rc.consul.lockAbortCh)
+	if err != nil {
+		rc.consul.lockStatusCh <- &consulLockStatus{
+			acquired: false,
+			err:      err,
+		}
+		return
+	}
+
+	// we acquired the lock
+
+	log.Println("[INFO] Lock acquired")
+	rc.consul.lockIsWaiting = false
+	rc.consul.lockIsHeld = true
+	rc.consul.lockStatusCh <- &consulLockStatus{
+		acquired: true,
+		err:      nil,
+	}
+
+	go rc.handleWaitForLockError()
 }
 
-func (rc *Resec) handleWaitForLockError() {
+// handleWaitForLockError will wait for the consul lock to close
+// meaning we've lost the lock and should step down as leader in our internal
+// state as well
+func (rc *resec) handleWaitForLockError() {
 	log.Printf("[DEBUG] Starting Consul Lock Error Handler")
 
-	rc.consul.LockWaitHandlerRunning = true
-	rc.consul.LockStopWaiterHandlerCh = make(chan bool)
+	rc.consul.lockWaitHandlerRunning = true
+	rc.consul.lockStopWaiterHandlerCh = make(chan bool)
 
 	select {
-	case data, ok := <-rc.consul.LockErrorCh:
-		if !ok {
-			log.Printf("[DEBUG] Lock Error chanel is  closed")
-			ErrMessage := fmt.Errorf("Consul lock lost or error")
-			log.Printf("[DEBUG] %s", ErrMessage)
-			rc.consul.LockIsWaiting = false
-			rc.consul.LockIsHeld = false
-			rc.consul.LockStatus <- &ConsulLockStatus{
-				Acquired: false,
-				Error:    ErrMessage,
-			}
-		} else {
+	case data, ok := <-rc.consul.lockErrorCh:
+		if ok {
 			log.Printf("[DEBUG] something wrote to lock error channel %v ", data)
+			break
 		}
-	case <-rc.consul.LockStopWaiterHandlerCh:
-		rc.consul.LockWaitHandlerRunning = false
+
+		log.Printf("[DEBUG] Lock Error chanel is closed")
+
+		err := fmt.Errorf("Consul lock lost or error")
+		log.Printf("[DEBUG] %s", err)
+
+		rc.consul.lockIsWaiting = false
+		rc.consul.lockIsHeld = false
+
+		rc.consul.lockStatusCh <- &consulLockStatus{
+			acquired: false,
+			err:      err,
+		}
+
+	case <-rc.consul.lockStopWaiterHandlerCh:
+		// todo(jippi): should this not be set when the function returns
+		//              like when lockErrorCh is closed
+		rc.consul.lockWaitHandlerRunning = false
 		log.Printf("[DEBUG] Stopped Consul Lock Error handler")
 	}
 }
 
-// AbortConsulLock stops consul lock handler")
-func (rc *Resec) AbortConsulLock() {
-
-	if rc.consul.LockWaitHandlerRunning {
+// releaseConsulLock stops consul lock handler")
+func (rc *resec) releaseConsulLock() {
+	if rc.consul.lockWaitHandlerRunning {
 		log.Printf("[DEBUG] Stopping Consul Lock Error handler")
-		close(rc.consul.LockStopWaiterHandlerCh)
+		close(rc.consul.lockStopWaiterHandlerCh)
 	}
-	if rc.consul.LockIsHeld {
+
+	if rc.consul.lockIsHeld {
 		log.Println("[DEBUG] Lock is held, releasing")
-		err := rc.consul.Lock.Unlock()
+		err := rc.consul.lock.Unlock()
+		// todo(jippi): don't we need to panic() here, our internal state is likely broken at this time
+		//              and restarting will let us either re-acquire the lock or get back in sync
 		if err != nil {
 			log.Println("[ERROR] Can't release consul lock", err)
-		} else {
-			rc.consul.LockIsHeld = false
+			return
 		}
-	} else {
-		if rc.consul.LockIsWaiting {
-			log.Printf("[DEBUG] Stopping wait for consul lock")
-			rc.consul.LockAbortCh <- struct{}{}
-			rc.consul.LockIsWaiting = false
-			log.Printf("[INFO] Stopped wait for consul lock")
-		}
+
+		rc.consul.lockIsHeld = false
+		return
 	}
 
+	if rc.consul.lockIsWaiting {
+		log.Printf("[DEBUG] Stopping wait for consul lock")
+		rc.consul.lockAbortCh <- struct{}{}
+		rc.consul.lockIsWaiting = false
+		log.Printf("[INFO] Stopped wait for consul lock")
+	}
 }
 
-// ServiceRegister registers a service in consul
-func (rc *Resec) ServiceRegister(replicationRole string) error {
-
-	nameToRegister := rc.consul.ServiceName
+// registerService registers a service in consul
+func (rc *resec) registerService() error {
+	nameToRegister := rc.consul.serviceName
 
 	if nameToRegister == "" {
-		nameToRegister = rc.consul.ServiceNamePrefix + "-" + replicationRole
+		nameToRegister = rc.consul.serviceNamePrefix + "-" + rc.redis.replicationStatus
 	}
 
-	rc.consul.ServiceID = nameToRegister + ":" + rc.redis.Addr
-	rc.consul.CheckID = rc.consul.ServiceID + ":replication-status-check"
+	rc.consul.serviceID = nameToRegister + ":" + rc.redis.address
+	rc.consul.checkID = rc.consul.serviceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
-		ID:   rc.consul.ServiceID,
+		ID:   rc.consul.serviceID,
 		Port: rc.announcePort,
 		Name: nameToRegister,
-		Tags: rc.consul.Tags[replicationRole],
+		Tags: rc.consul.tags[rc.redis.replicationStatus],
 	}
 
 	if rc.announceHost != "" {
@@ -150,54 +164,51 @@ func (rc *Resec) ServiceRegister(replicationRole string) error {
 
 	log.Printf("[DEBUG] Registering %s service in consul", serviceInfo.Name)
 
-	err := rc.consul.Client.Agent().ServiceRegister(serviceInfo)
-	if err != nil {
-		rc.HandleConsulError(err)
+	if err := rc.consul.client.Agent().ServiceRegister(serviceInfo); err != nil {
+		rc.handleConsulError(err)
 		return err
 	}
 
 	log.Printf("[INFO] Registered service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
+	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.checkID, nameToRegister, serviceInfo.ID)
 
-	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.CheckID, nameToRegister, serviceInfo.ID)
-
-	err = rc.consul.Client.Agent().CheckRegister(&consulapi.AgentCheckRegistration{
-		Name:      replicationRole + " replication status",
-		ID:        rc.consul.CheckID,
-		ServiceID: rc.consul.ServiceID,
+	check := &consulapi.AgentCheckRegistration{
+		Name:      rc.redis.replicationStatus + " replication status",
+		ID:        rc.consul.checkID,
+		ServiceID: rc.consul.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL:    rc.consul.TTL,
+			TTL:    rc.consul.ttl,
 			Status: "critical",
-			DeregisterCriticalServiceAfter: rc.consul.DeregisterServiceAfter.String(),
+			DeregisterCriticalServiceAfter: rc.consul.deregisterServiceAfter.String(),
 		},
-	})
-
-	if err != nil {
+	}
+	if err := rc.consul.client.Agent().CheckRegister(check); err != nil {
 		log.Println("[ERROR] Consul Check registration failed", "error", err)
-		rc.HandleConsulError(err)
+		rc.handleConsulError(err)
 		return err
 	}
 
-	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.CheckID, nameToRegister, serviceInfo.ID)
-
-	return err
+	log.Printf("[DEBUG] TTL Check added with id %s to service %s with id %s", rc.consul.checkID, nameToRegister, serviceInfo.ID)
+	return nil
 }
 
-// SetConsulCheckStatus sets consul status check
-func (rc *Resec) SetConsulCheckStatus(output, status string) error {
-	return rc.consul.Client.Agent().UpdateTTL(rc.consul.CheckID, output, status)
+// setConsulCheckStatus sets consul status check
+func (rc *resec) setConsulCheckStatus(output, status string) error {
+	return rc.consul.client.Agent().UpdateTTL(rc.consul.checkID, output, status)
 }
 
-// WatchForMaster starts watching procedure
-func (rc *Resec) WatchForMaster() error {
+// watchConsulMasterService starts watching the service (+ tags) that represents the
+// redis master service. All changes will be emitted to masterConsulServiceCh.
+func (rc *resec) watchConsulMasterService() error {
 	params := map[string]interface{}{
 		"type":        "service",
+		"service":     rc.consul.serviceNamePrefix + "-master",
 		"passingonly": true,
 	}
-	if rc.consul.ServiceName == "" {
-		params["service"] = rc.consul.ServiceNamePrefix + "-master"
-	} else {
-		params["tag"] = rc.consul.Tags["master"][0]
-		params["service"] = rc.consul.ServiceName
+
+	if rc.consul.serviceName != "" {
+		params["service"] = rc.consul.serviceName
+		params["tag"] = rc.consul.tags["master"][0]
 	}
 
 	wp, err := consulwatch.Parse(params)
@@ -210,31 +221,39 @@ func (rc *Resec) WatchForMaster() error {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
 			log.Printf("[INFO] Received update for master from consul")
-			rc.masterConsulServiceCh <- masterConsulServiceStatus
+			rc.consulMasterServiceCh <- masterConsulServiceStatus
+
 		default:
 			log.Printf("[ERROR] Got an unknown interface from Consul %s", masterConsulServiceStatus)
 		}
-
 	}
 
-	go func() {
-		if err := wp.Run(rc.consul.ClientConfig.Address); err != nil {
-			log.Printf("[ERROR] Error watching for %s changes %s", rc.consul.ServiceNamePrefix+"-master", err)
-		}
-	}()
+	if err := wp.Run(rc.consul.clientConfig.Address); err != nil {
+		log.Printf("[ERROR] Error watching for %s changes %s", params["service"], err)
+	}
 
 	return nil
 }
 
-// HandleConsulError is the error handler
-func (rc *Resec) HandleConsulError(err error) {
+func (rc *resec) consulLockOptions() *consulapi.LockOptions {
+	return &consulapi.LockOptions{
+		Key:         rc.consul.lockKey,
+		SessionName: "resec",
+		SessionTTL:  rc.consul.lockTTL.String(),
+	}
+}
 
-	if err != nil {
-
-		if strings.Contains(err.Error(), "dial tcp") {
-			rc.consul.Healthy = false
-			log.Printf("[ERROR] Consul Agent is down")
-		}
+// handleConsulError is the error handler
+func (rc *resec) handleConsulError(err error) {
+	if err == nil {
+		return
 	}
 
+	if strings.Contains(err.Error(), "dial tcp") {
+		rc.consul.healthy = false
+		log.Printf("[ERROR] Consul Agent is down")
+		return
+	}
+
+	log.Printf("[ERROR] Consul error: %v", err)
 }

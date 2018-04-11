@@ -16,108 +16,113 @@ import (
 // Environment variables keys
 const (
 	AnnounceAddr                 = "ANNOUNCE_ADDR"
-	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
-	ConsulServiceName            = "CONSUL_SERVICE_NAME"
-	ConsulLockKey                = "CONSUL_LOCK_KEY"
 	ConsulDeregisterServiceAfter = "CONSUL_DEREGISTER_SERVICE_AFTER"
+	ConsulLockKey                = "CONSUL_LOCK_KEY"
 	ConsulLockTTL                = "CONSUL_LOCK_TTL"
+	ConsulServiceName            = "CONSUL_SERVICE_NAME"
+	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
 	HealthCheckInterval          = "HEALTHCHECK_INTERVAL"
 	HealthCheckTimeout           = "HEATHCHECK_TIMEOUT"
+	LogLevel                     = "LOG_LEVEL"
 	MasterTags                   = "MASTER_TAGS"
-	SlaveTags                    = "SLAVE_TAGS"
 	RedisAddr                    = "REDIS_ADDR"
 	RedisPassword                = "REDIS_PASSWORD"
-	LogLevel                     = "LOG_LEVEL"
+	SlaveTags                    = "SLAVE_TAGS"
 )
 
-// Consul struct description
-type Consul struct {
-	ClientConfig            *consulapi.Config
-	Client                  *consulapi.Client
-	ServiceName             string
-	ServiceNamePrefix       string
-	DeregisterServiceAfter  time.Duration
-	LockAbortCh             chan struct{}
-	LockKey                 string
-	LockStatus              chan *ConsulLockStatus
-	LockErrorCh             <-chan struct{}
-	LockIsHeld              bool
-	LockIsWaiting           bool
-	LockWaitHandlerRunning  bool
-	LockStopWaiterHandlerCh chan bool
-	Lock                    *consulapi.Lock
-	LockTTL                 time.Duration
-	Tags                    map[string][]string
-	TTL                     string
-	CheckID                 string
-	ServiceID               string
-	Healthy                 bool
+// consul struct description
+type consul struct {
+	checkID                 string                 // consul check ID to register our service with
+	client                  *consulapi.Client      // consul client used to interact with Consul
+	clientConfig            *consulapi.Config      // consul client config
+	deregisterServiceAfter  time.Duration          // time to have the consul service in "failed" mode before consul will reap it
+	healthy                 bool                   // track if the consul backend is healthy or not
+	lock                    *consulapi.Lock        // consul log struct
+	lockAbortCh             chan struct{}          // channel will be closed when we want to abort waiting for the consul lock
+	lockErrorCh             <-chan struct{}        // channel will be closed by Consul SDK when the held lock fails
+	lockIsHeld              bool                   // track if we currently hold the lock (aka redis master)
+	lockIsWaiting           bool                   // track if we are waiting for the lock to be released (trying to become master)
+	lockKey                 string                 // consul kv path to the lock
+	lockStatusCh            chan *consulLockStatus // used to publish consul lock changes internally
+	lockStopWaiterHandlerCh chan bool              // used to gracefully release the held lock
+	lockTTL                 time.Duration          // time-to-live for the lock (how frequently we need to update it to keep the ownership)
+	lockWaitHandlerRunning  bool                   // track if we are currently waiting to acquire the lock
+	serviceID               string                 // consul service ID (consul internal id) to use when registering the service
+	serviceName             string                 // the (human) service name to register our service as
+	serviceNamePrefix       string                 // an optional prefix for the consul service name
+	tags                    map[string][]string    // list of arbitrary consul tags to publish with the service
+	ttl                     string
 }
 
-// ConsulLockStatus struct description
-type ConsulLockStatus struct {
-	Acquired bool
-	Error    error
+// consulLockStatus is our internal representation of the consul lock health / avaibility
+type consulLockStatus struct {
+	acquired bool  // have we acquired the consul lock or not
+	err      error // any errors we might have gotten during the consul lock
 }
 
-// Redis struct description
-type Redis struct {
-	Addr              string
-	Password          string
-	Client            *redis.Client
-	Healthy           bool
-	ReplicationStatus string
+// redisConnection is our internal representation of redis state
+type redisConnection struct {
+	address           string        // address to connect to
+	password          string        // (optional) redis password
+	client            *redis.Client // redis client
+	healthy           bool          // wether we can talk to redis or not
+	replicationStatus string        // the current replication status (master or slave)
 }
 
-// RedisInfo struct description
-type RedisInfo struct {
-	Address string
-	Port    int
+// redisInfo struct description
+type redisInfo struct {
+	address string
+	port    int
 }
 
-// RedisHealth struct description
-type RedisHealth struct {
-	Output  string
-	Healthy bool
+// redisHealth struct description
+type redisHealth struct {
+	output  string // raw output from redis status
+	healthy bool   // wether we successfully could talk to redis or not
 }
 
-// Resec struct description
-type Resec struct {
-	consul                *Consul
-	redis                 *Redis
-	announceAddr          string
-	announceHost          string
-	announcePort          int
-	healthCheckInterval   time.Duration
-	healthCheckTimeout    time.Duration
-	logLevel              string
-	masterConsulServiceCh chan []*consulapi.ServiceEntry
-	redisHealthCh         chan *RedisHealth
-	lastKnownMaster       *consulapi.ServiceEntry
-	lastKnownMasterInfo   RedisInfo
+// resec core struct
+// holds references to other structs with internal state
+type resec struct {
+	announceAddr          string                         // what IP we should publish to Consul (default "")
+	announceHost          string                         // ??
+	announcePort          int                            // what Port we should publish to Consul (default "")
+	consul                *consul                        // internal Consul state
+	healthCheckInterval   time.Duration                  // how frequently we should update our consul check
+	healthCheckTimeout    time.Duration                  // how long time the health check is allowed to take
+	lastKnownMaster       *consulapi.ServiceEntry        // struct with the info on the last known redis master (from consul catalog)
+	lastKnownMasterInfo   redisInfo                      // struct with the info on the last known redis master (internal representation)
+	logLevel              string                         // which level we should do logging
+	consulMasterServiceCh chan []*consulapi.ServiceEntry // channel where consul updates to the master service will be published
+	redis                 *redisConnection               // internal Redis state
+	redisReplicationCh    chan *redisHealth              // channel where redis updates will be published
 }
 
-// Init returns the default configuration for the ReSeC
-func Init() *Resec {
-	config := &Resec{
-		consul: &Consul{
-			ClientConfig: &consulapi.Config{
+// setup returns the default configuration for the ReSeC
+func setup() *resec {
+	config := &resec{
+		consul: &consul{
+			clientConfig: &consulapi.Config{
 				HttpClient: &http.Client{
 					Timeout: time.Second * 1,
 				},
 			},
-			ServiceNamePrefix: "redis",
-			LockKey:           "resec/.lock",
-			LockStatus:        make(chan *ConsulLockStatus, 1),
-			LockAbortCh:       make(chan struct{}, 1),
-			Tags:              make(map[string][]string),
+			serviceNamePrefix:      "redis",
+			lockKey:                "resec/.lock",
+			deregisterServiceAfter: time.Hour * 72,
+			lockTTL:                time.Second * 15,
+			lockStatusCh:           make(chan *consulLockStatus, 1),
+			lockAbortCh:            make(chan struct{}, 1),
+			tags:                   make(map[string][]string),
 		},
-		redis: &Redis{
-			Addr: "127.0.0.1:6379",
+		redis: &redisConnection{
+			address: "127.0.0.1:6379",
 		},
-		masterConsulServiceCh: make(chan []*consulapi.ServiceEntry, 1),
-		redisHealthCh:         make(chan *RedisHealth, 1),
 		logLevel:              "INFO",
+		healthCheckInterval:   time.Second * 5,
+		healthCheckTimeout:    2 * time.Minute,
+		consulMasterServiceCh: make(chan []*consulapi.ServiceEntry, 1),
+		redisReplicationCh:    make(chan *redisHealth, 1),
 	}
 
 	if logLevel := os.Getenv(LogLevel); logLevel != "" {
@@ -133,24 +138,24 @@ func Init() *Resec {
 
 	// Prefer CONSUL_SERVICE_NAME over CONSUL_SERVICE_PREFIX
 	if consulServiceName := os.Getenv(ConsulServiceName); consulServiceName != "" {
-		config.consul.ServiceName = consulServiceName
+		config.consul.serviceName = consulServiceName
 	} else if consulServicePrefix := os.Getenv(ConsulServicePrefix); consulServicePrefix != "" {
-		config.consul.ServiceNamePrefix = consulServicePrefix
+		config.consul.serviceNamePrefix = consulServicePrefix
 	}
 
 	// Fail if CONSUL_SERVICE_NAME is used and no MASTER_TAGS are provided
 	if masterTags := os.Getenv(MasterTags); masterTags != "" {
-		config.consul.Tags["master"] = strings.Split(masterTags, ",")
-	} else if config.consul.ServiceName != "" {
+		config.consul.tags["master"] = strings.Split(masterTags, ",")
+	} else if config.consul.serviceName != "" {
 		log.Fatalf("[FATAL] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
 	}
 
 	if slaveTags := os.Getenv(SlaveTags); slaveTags != "" {
-		config.consul.Tags["slave"] = strings.Split(slaveTags, ",")
+		config.consul.tags["slave"] = strings.Split(slaveTags, ",")
 	}
 
 	if consulLockKey := os.Getenv(ConsulLockKey); consulLockKey != "" {
-		config.consul.LockKey = consulLockKey
+		config.consul.lockKey = consulLockKey
 	}
 
 	if healthCheckInterval := os.Getenv(HealthCheckInterval); healthCheckInterval != "" {
@@ -160,12 +165,10 @@ func Init() *Resec {
 			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckInterval, healthCheckInterval)
 		}
 		config.healthCheckInterval = healthCheckIntervalDuration
-	} else {
-		config.healthCheckInterval = time.Second * 5
 	}
 
 	// setting Consul Check TTL to be 2 * Check Interval
-	config.consul.TTL = time.Duration(config.healthCheckInterval * 2).String()
+	config.consul.ttl = time.Duration(config.healthCheckInterval * 2).String()
 
 	if healthCheckTimeout := os.Getenv(HealthCheckTimeout); healthCheckTimeout != "" {
 		healthCheckTimeOutDuration, err := time.ParseDuration(healthCheckTimeout)
@@ -173,8 +176,6 @@ func Init() *Resec {
 			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckTimeout, healthCheckTimeout)
 		}
 		config.healthCheckTimeout = healthCheckTimeOutDuration
-	} else {
-		config.healthCheckTimeout = time.Second * 2
 	}
 
 	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
@@ -182,9 +183,7 @@ func Init() *Resec {
 		if err != nil {
 			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter)
 		}
-		config.consul.DeregisterServiceAfter = consulDeregisterServiceAfterDuration
-	} else {
-		config.consul.DeregisterServiceAfter = time.Hour * 72
+		config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
 	}
 
 	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
@@ -195,17 +194,15 @@ func Init() *Resec {
 		if consuLockTTLDuration < time.Second*15 {
 			log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
 		}
-		config.consul.LockTTL = consuLockTTLDuration
-	} else {
-		config.consul.LockTTL = time.Second * 15
+		config.consul.lockTTL = consuLockTTLDuration
 	}
 
 	if redisAddr := os.Getenv(RedisAddr); redisAddr != "" {
-		config.redis.Addr = redisAddr
+		config.redis.address = redisAddr
 	}
 
 	if redisPassword := os.Getenv(RedisPassword); redisPassword != "" {
-		config.redis.Password = redisPassword
+		config.redis.password = redisPassword
 	}
 
 	// If ANNOUNCE_ADDR is set it will be used for registration in consul
@@ -215,12 +212,12 @@ func Init() *Resec {
 	if announceAddr := os.Getenv(AnnounceAddr); announceAddr != "" {
 		config.announceAddr = announceAddr
 	} else {
-		redisHost := strings.Split(config.redis.Addr, ":")[0]
-		redisPort := strings.Split(config.redis.Addr, ":")[1]
+		redisHost := strings.Split(config.redis.address, ":")[0]
+		redisPort := strings.Split(config.redis.address, ":")[1]
 		if redisHost == "127.0.0.1" || redisHost == "localhost" || redisHost == "::1" {
 			config.announceAddr = ":" + redisPort
 		} else {
-			config.announceAddr = config.redis.Addr
+			config.announceAddr = config.redis.address
 		}
 	}
 
@@ -228,25 +225,25 @@ func Init() *Resec {
 	config.announceHost = strings.Split(config.announceAddr, ":")[0]
 	config.announcePort, err = strconv.Atoi(strings.Split(config.announceAddr, ":")[1])
 	if err != nil {
-		log.Printf("[ERROR] Trouble extracting port number from [%s]", config.redis.Addr)
+		log.Printf("[ERROR] Trouble extracting port number from [%s]", config.redis.address)
 	}
 
 	// initialise redis as unhealthy
-	config.redis.Healthy = false
+	config.redis.healthy = false
 
 	redisOptions := &redis.Options{
-		Addr:        config.redis.Addr,
+		Addr:        config.redis.address,
 		DialTimeout: config.healthCheckTimeout,
 		ReadTimeout: config.healthCheckTimeout,
 	}
 
-	if config.redis.Password != "" {
-		redisOptions.Password = config.redis.Password
+	if config.redis.password != "" {
+		redisOptions.Password = config.redis.password
 	}
 
-	config.redis.Client = redis.NewClient(redisOptions)
+	config.redis.client = redis.NewClient(redisOptions)
 
-	config.consul.Client, err = consulapi.NewClient(config.consul.ClientConfig)
+	config.consul.client, err = consulapi.NewClient(config.consul.clientConfig)
 
 	if err != nil {
 		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)

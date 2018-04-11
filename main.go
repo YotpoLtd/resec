@@ -5,18 +5,17 @@ import (
 )
 
 func main() {
-
 	log.Println("[INFO] Start!")
 
-	// init the Init
-	resec := Init()
+	resec := setup()
 
-	go resec.RedisHealthCheck()
+	go resec.watchRedisReplicationStatus()
+	go resec.watchConsulMasterService()
 
-	go resec.WatchForMaster()
+	defer func() {
+		log.Printf("[INFO] Shutting down ...")
+		resec.stop()
+	}()
 
-	defer resec.Stop()
-
-	resec.Start()
-
+	resec.start()
 }

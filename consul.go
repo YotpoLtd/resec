@@ -238,7 +238,7 @@ func (rc *resec) watchConsulMasterService() error {
 func (rc *resec) consulLockOptions() *consulapi.LockOptions {
 	return &consulapi.LockOptions{
 		Key:         rc.consul.lockKey,
-		SessionName: "resec",
+		SessionName: rc.consul.lockSessionName,
 		SessionTTL:  rc.consul.lockTTL.String(),
 	}
 }

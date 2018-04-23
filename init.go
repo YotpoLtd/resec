@@ -18,6 +18,7 @@ const (
 	AnnounceAddr                 = "ANNOUNCE_ADDR"
 	ConsulDeregisterServiceAfter = "CONSUL_DEREGISTER_SERVICE_AFTER"
 	ConsulLockKey                = "CONSUL_LOCK_KEY"
+	ConsulLockSessionName		 = "CONSUL_LOCK_SESSION_NAME"
 	ConsulLockTTL                = "CONSUL_LOCK_TTL"
 	ConsulServiceName            = "CONSUL_SERVICE_NAME"
 	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
@@ -43,6 +44,7 @@ type consul struct {
 	lockIsHeld              bool                   // track if we currently hold the lock (aka redis master)
 	lockIsWaiting           bool                   // track if we are waiting for the lock to be released (trying to become master)
 	lockKey                 string                 // consul kv path to the lock
+	lockSessionName         string                 // consul lock session name
 	lockStatusCh            chan *consulLockStatus // used to publish consul lock changes internally
 	lockStopWaiterHandlerCh chan bool              // used to gracefully release the held lock
 	lockTTL                 time.Duration          // time-to-live for the lock (how frequently we need to update it to keep the ownership)
@@ -107,13 +109,14 @@ func setup() *resec {
 					Timeout: time.Second * 1,
 				},
 			},
-			serviceNamePrefix:      "redis",
-			lockKey:                "resec/.lock",
 			deregisterServiceAfter: time.Hour * 72,
-			lockTTL:                time.Second * 15,
-			lockStatusCh:           make(chan *consulLockStatus, 1),
 			lockAbortCh:            make(chan struct{}, 1),
+			lockKey:                "resec/.lock",
+			lockSessionName:        "resec",
+			lockStatusCh:           make(chan *consulLockStatus, 1),
+			lockTTL:                time.Second * 15,
 			tags:                   make(map[string][]string),
+			serviceNamePrefix:      "redis",
 		},
 		redis: &redisConnection{
 			address: "127.0.0.1:6379",
@@ -156,6 +159,10 @@ func setup() *resec {
 
 	if consulLockKey := os.Getenv(ConsulLockKey); consulLockKey != "" {
 		config.consul.lockKey = consulLockKey
+	}
+
+	if consulLockSessionName := os.Getenv(ConsulLockSessionName); consulLockSessionName != "" {
+		config.consul.lockSessionName = consulLockSessionName
 	}
 
 	if healthCheckInterval := os.Getenv(HealthCheckInterval); healthCheckInterval != "" {

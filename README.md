@@ -46,7 +46,9 @@ ANNOUNCE_ADDR         |                | IP:Port of Redis to be announced, by de
 CONSUL_SERVICE_NAME   |                | Consul service name for tag based service discovery
 CONSUL_SERVICE_PREFIX | redis          | Name Prefix, will be followed by "-(master/slave)", ignored if CONSUL_SERVICE_NAME is used     
 CONSUL_LOCK_KEY       | resec/.lock    | KV lock location, should be overriden if multiple instances running in the same consul DC
-CONSUL_LOCK_SESSION_NAME       | resec | Lock session Name to distinguish multiple resec masters on one host 
+CONSUL_LOCK_SESSION_NAME       | resec | Lock session Name to distinguish multiple resec masters on one host
+CONSUL_LOCK_MONITOR_RETRIES | 3        | Number of retries of lock receives 500 Error from Consul
+CONSUL_LOCK_MONITOR_RETRY_INTERVAL | 1s | Retry interval if lock receives 500 Error from Consul
 CONSUL_DEREGISTER_SERVICE_AFTER | 72h  |
 CONSUL_LOCK_TTL       | 15s            |
 MASTER_TAGS           |                | Comma separated list of tags to be added to master instance

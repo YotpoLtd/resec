@@ -237,9 +237,11 @@ func (rc *resec) watchConsulMasterService() error {
 
 func (rc *resec) consulLockOptions() *consulapi.LockOptions {
 	return &consulapi.LockOptions{
-		Key:         rc.consul.lockKey,
-		SessionName: rc.consul.lockSessionName,
-		SessionTTL:  rc.consul.lockTTL.String(),
+		Key:              rc.consul.lockKey,
+		SessionName:      rc.consul.lockSessionName,
+		SessionTTL:       rc.consul.lockTTL.String(),
+		MonitorRetries:   rc.consul.lockMonitorRetries,
+		MonitorRetryTime: rc.consul.lockMonitorRetryInterval,
 	}
 }
 
@@ -252,7 +254,6 @@ func (rc *resec) handleConsulError(err error) {
 	if strings.Contains(err.Error(), "dial tcp") {
 		rc.consul.healthy = false
 		log.Printf("[ERROR] Consul Agent is down")
-		return
 	}
 
 	log.Printf("[ERROR] Consul error: %v", err)

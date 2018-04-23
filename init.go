@@ -15,44 +15,48 @@ import (
 
 // Environment variables keys
 const (
-	AnnounceAddr                 = "ANNOUNCE_ADDR"
-	ConsulDeregisterServiceAfter = "CONSUL_DEREGISTER_SERVICE_AFTER"
-	ConsulLockKey                = "CONSUL_LOCK_KEY"
-	ConsulLockSessionName		 = "CONSUL_LOCK_SESSION_NAME"
-	ConsulLockTTL                = "CONSUL_LOCK_TTL"
-	ConsulServiceName            = "CONSUL_SERVICE_NAME"
-	ConsulServicePrefix          = "CONSUL_SERVICE_PREFIX"
-	HealthCheckInterval          = "HEALTHCHECK_INTERVAL"
-	HealthCheckTimeout           = "HEATHCHECK_TIMEOUT"
-	LogLevel                     = "LOG_LEVEL"
-	MasterTags                   = "MASTER_TAGS"
-	RedisAddr                    = "REDIS_ADDR"
-	RedisPassword                = "REDIS_PASSWORD"
-	SlaveTags                    = "SLAVE_TAGS"
+	AnnounceAddr                   = "ANNOUNCE_ADDR"
+	ConsulDeregisterServiceAfter   = "CONSUL_DEREGISTER_SERVICE_AFTER"
+	ConsulLockKey                  = "CONSUL_LOCK_KEY"
+	ConsulLockSessionName          = "CONSUL_LOCK_SESSION_NAME"
+	ConsulLockTTL                  = "CONSUL_LOCK_TTL"
+	ConsulLockMonitorRetries       = "CONSUL_LOCK_MONITOR_RETRIES"
+	ConsulLockMonitorRetryInterval = "CONSUL_LOCK_MONITOR_RETRY_INTERVAL"
+	ConsulServiceName              = "CONSUL_SERVICE_NAME"
+	ConsulServicePrefix            = "CONSUL_SERVICE_PREFIX"
+	HealthCheckInterval            = "HEALTHCHECK_INTERVAL"
+	HealthCheckTimeout             = "HEALTHCHECK_TIMEOUT"
+	LogLevel                       = "LOG_LEVEL"
+	MasterTags                     = "MASTER_TAGS"
+	RedisAddr                      = "REDIS_ADDR"
+	RedisPassword                  = "REDIS_PASSWORD"
+	SlaveTags                      = "SLAVE_TAGS"
 )
 
 // consul struct description
 type consul struct {
-	checkID                 string                 // consul check ID to register our service with
-	client                  *consulapi.Client      // consul client used to interact with Consul
-	clientConfig            *consulapi.Config      // consul client config
-	deregisterServiceAfter  time.Duration          // time to have the consul service in "failed" mode before consul will reap it
-	healthy                 bool                   // track if the consul backend is healthy or not
-	lock                    *consulapi.Lock        // consul log struct
-	lockAbortCh             chan struct{}          // channel will be closed when we want to abort waiting for the consul lock
-	lockErrorCh             <-chan struct{}        // channel will be closed by Consul SDK when the held lock fails
-	lockIsHeld              bool                   // track if we currently hold the lock (aka redis master)
-	lockIsWaiting           bool                   // track if we are waiting for the lock to be released (trying to become master)
-	lockKey                 string                 // consul kv path to the lock
-	lockSessionName         string                 // consul lock session name
-	lockStatusCh            chan *consulLockStatus // used to publish consul lock changes internally
-	lockStopWaiterHandlerCh chan bool              // used to gracefully release the held lock
-	lockTTL                 time.Duration          // time-to-live for the lock (how frequently we need to update it to keep the ownership)
-	lockWaitHandlerRunning  bool                   // track if we are currently waiting to acquire the lock
-	serviceID               string                 // consul service ID (consul internal id) to use when registering the service
-	serviceName             string                 // the (human) service name to register our service as
-	serviceNamePrefix       string                 // an optional prefix for the consul service name
-	tags                    map[string][]string    // list of arbitrary consul tags to publish with the service
+	checkID                 string                  // consul check ID to register our service with
+	client                  *consulapi.Client       // consul client used to interact with Consul
+	clientConfig            *consulapi.Config       // consul client config
+	deregisterServiceAfter  time.Duration           // time to have the consul service in "failed" mode before consul will reap it
+	healthy                 bool                    // track if the consul backend is healthy or not
+	lock                    *consulapi.Lock         // consul log struct
+	lockAbortCh             chan struct{}           // channel will be closed when we want to abort waiting for the consul lock
+	lockErrorCh              <-chan struct{}        // channel will be closed by Consul SDK when the held lock fails
+	lockIsHeld               bool                   // track if we currently hold the lock (aka redis master)
+	lockIsWaiting            bool                   // track if we are waiting for the lock to be released (trying to become master)
+	lockKey                  string                 // consul kv path to the lock
+	lockMonitorRetries       int                    // consul lock retries if 500 is received
+	lockMonitorRetryInterval time.Duration          // consul lock retry time
+	lockSessionName          string                 // consul lock session name
+	lockStatusCh             chan *consulLockStatus // used to publish consul lock changes internally
+	lockStopWaiterHandlerCh  chan bool              // used to gracefully release the held lock
+	lockTTL                  time.Duration          // time-to-live for the lock (how frequently we need to update it to keep the ownership)
+	lockWaitHandlerRunning   bool                   // track if we are currently waiting to acquire the lock
+	serviceID               string                  // consul service ID (consul internal id) to use when registering the service
+	serviceName             string                  // the (human) service name to register our service as
+	serviceNamePrefix       string                  // an optional prefix for the consul service name
+	tags                    map[string][]string     // list of arbitrary consul tags to publish with the service
 	ttl                     string
 }
 
@@ -109,14 +113,16 @@ func setup() *resec {
 					Timeout: time.Second * 1,
 				},
 			},
-			deregisterServiceAfter: time.Hour * 72,
-			lockAbortCh:            make(chan struct{}, 1),
-			lockKey:                "resec/.lock",
-			lockSessionName:        "resec",
-			lockStatusCh:           make(chan *consulLockStatus, 1),
-			lockTTL:                time.Second * 15,
-			tags:                   make(map[string][]string),
-			serviceNamePrefix:      "redis",
+			deregisterServiceAfter:   time.Hour * 72,
+			lockAbortCh:              make(chan struct{}, 1),
+			lockKey:                  "resec/.lock",
+			lockMonitorRetries:       3,
+			lockMonitorRetryInterval: time.Second * 1,
+			lockSessionName:          "resec",
+			lockStatusCh:             make(chan *consulLockStatus, 1),
+			lockTTL:                  time.Second * 15,
+			tags:                     make(map[string][]string),
+			serviceNamePrefix:        "redis",
 		},
 		redis: &redisConnection{
 			address: "127.0.0.1:6379",
@@ -165,13 +171,33 @@ func setup() *resec {
 		config.consul.lockSessionName = consulLockSessionName
 	}
 
+	if consulLockMonitorRetries := os.Getenv(ConsulLockMonitorRetries); consulLockMonitorRetries != "" {
+		consulLockMonitorRetriesInt, err := strconv.Atoi(consulLockMonitorRetries)
+		if err != nil {
+			log.Printf("[ERROR] Trouble parsing %s [%s] as int, using default %d ", ConsulLockMonitorRetries, consulLockMonitorRetries, config.consul.lockMonitorRetries)
+		} else {
+			config.consul.lockMonitorRetries = consulLockMonitorRetriesInt
+		}
+	}
+
+	if consulLockMonitorRetryInterval := os.Getenv(ConsulLockMonitorRetryInterval); consulLockMonitorRetryInterval != "" {
+		consulLockMonitorRetryIntervalDuration, err := time.ParseDuration(consulLockMonitorRetryInterval)
+
+		if err != nil {
+			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, config.consul.lockMonitorRetryInterval)
+		} else {
+			config.consul.lockMonitorRetryInterval = consulLockMonitorRetryIntervalDuration
+		}
+	}
+
 	if healthCheckInterval := os.Getenv(HealthCheckInterval); healthCheckInterval != "" {
 		healthCheckIntervalDuration, err := time.ParseDuration(healthCheckInterval)
 
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckInterval, healthCheckInterval)
+			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckInterval, healthCheckInterval, config.healthCheckInterval)
+		} else {
+			config.healthCheckInterval = healthCheckIntervalDuration
 		}
-		config.healthCheckInterval = healthCheckIntervalDuration
 	}
 
 	// setting Consul Check TTL to be 2 * Check Interval
@@ -180,28 +206,31 @@ func setup() *resec {
 	if healthCheckTimeout := os.Getenv(HealthCheckTimeout); healthCheckTimeout != "" {
 		healthCheckTimeOutDuration, err := time.ParseDuration(healthCheckTimeout)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s]", HealthCheckTimeout, healthCheckTimeout)
+			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckTimeout, healthCheckTimeout, config.healthCheckTimeout)
+		} else {
+			config.healthCheckTimeout = healthCheckTimeOutDuration
 		}
-		config.healthCheckTimeout = healthCheckTimeOutDuration
 	}
 
 	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
 		consulDeregisterServiceAfterDuration, err := time.ParseDuration(consulDeregisterServiceAfter)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter)
+			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, config.consul.deregisterServiceAfter)
+		} else {
+			config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
 		}
-		config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
 	}
 
 	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
 		consuLockTTLDuration, err := time.ParseDuration(consuLockTTL)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s]", ConsulLockTTL, consuLockTTL)
+			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockTTL, consuLockTTL, config.consul.lockTTL)
+		} else {
+			if consuLockTTLDuration < time.Second*15 {
+				log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
+			}
+			config.consul.lockTTL = consuLockTTLDuration
 		}
-		if consuLockTTLDuration < time.Second*15 {
-			log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
-		}
-		config.consul.lockTTL = consuLockTTLDuration
 	}
 
 	if redisAddr := os.Getenv(RedisAddr); redisAddr != "" {

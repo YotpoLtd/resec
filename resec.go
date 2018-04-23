@@ -28,27 +28,29 @@ func (rc *resec) start() {
 				return
 			}
 
-			log.Printf("[DEBUG] Got redis replication status update")
+			log.Printf("[DEBUG] Got redis replication status update:\n %s", update.output)
 
 			if rc.consul.healthy {
 				// if we don't have any check id, we haven't registered our service yet
 				// let's do that first
-				if rc.consul.checkID == "" {
-					rc.registerService()
-				}
+				if rc.redis.replicationStatus != "" {
+					if rc.consul.checkID == "" {
+						rc.registerService()
+					}
 
-				var status string
-				if update.healthy {
-					log.Printf("[DEBUG] Redis health OK, sending update to Consul")
-					status = "pass"
-				} else {
-					log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
-					status = "fail"
-				}
+					var status string
+					if update.healthy {
+						log.Printf("[DEBUG] Redis health OK, sending update to Consul")
+						status = "pass"
+					} else {
+						log.Printf("[DEBUG] Redis health NOT OK, sending update to Consul")
+						status = "fail"
+					}
 
-				if err := rc.setConsulCheckStatus(update.output, status); err != nil {
-					rc.handleConsulError(err)
-					log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
+					if err := rc.setConsulCheckStatus(update.output, status); err != nil {
+						rc.handleConsulError(err)
+						log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
+					}
 				}
 			} else {
 				log.Printf("[INFO] Consul is not healthy, skipping service check update")
@@ -81,7 +83,7 @@ func (rc *resec) start() {
 
 		case update, ok := <-rc.consulMasterServiceCh:
 			if !ok {
-				log.Println("[ERROR] Consul master service channel was closed, shutting down")
+				log.Printf("[ERROR] Consul master service channel was closed, shutting down")
 				return
 			}
 

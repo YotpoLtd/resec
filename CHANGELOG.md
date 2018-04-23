@@ -1,3 +1,11 @@
+## 0.3.0 (April 23, 2018)
+
+FEATURES:
+
+  * Consul lock session name can be adjusted
+  * Consul lock retry oprion added
+  * Dependencies updated (Consul to 1.0.7, go-redis to 6.10.2)
+
 ## 0.2.0 (March 13, 2018)
 
 FEATURES:

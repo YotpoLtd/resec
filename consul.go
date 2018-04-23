@@ -178,7 +178,7 @@ func (rc *resec) registerService() error {
 		ServiceID: rc.consul.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
 			TTL:    rc.consul.ttl,
-			Status: "critical",
+			Status: "passing",
 			DeregisterCriticalServiceAfter: rc.consul.deregisterServiceAfter.String(),
 		},
 	}
@@ -220,7 +220,7 @@ func (rc *resec) watchConsulMasterService() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[INFO] Received update for master from consul")
+			log.Printf("[DEBUG] Received update for master from consul")
 			rc.consulMasterServiceCh <- masterConsulServiceStatus
 
 		default:

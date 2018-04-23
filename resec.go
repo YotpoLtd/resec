@@ -35,6 +35,7 @@ func (rc *resec) start() {
 				// let's do that first
 				if rc.redis.replicationStatus != "" {
 					if rc.consul.checkID == "" {
+						log.Printf("[DEBUG] Consul Check ID is not generated")
 						rc.registerService()
 					}
 
@@ -51,6 +52,8 @@ func (rc *resec) start() {
 						rc.handleConsulError(err)
 						log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
 					}
+				} else {
+					log.Printf("[DEBUG] Redis replication status is not defined")
 				}
 			} else {
 				log.Printf("[INFO] Consul is not healthy, skipping service check update")
@@ -99,7 +102,7 @@ func (rc *resec) start() {
 					go rc.acquireConsulLeadership()
 					continue
 				}
-				log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
+				log.Printf("[DEBUG] No Master found in consul, but redis is not healthy, nothing to do here")
 
 			// multiple masters is not good
 			case masterCount > 1:

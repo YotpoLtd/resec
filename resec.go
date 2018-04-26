@@ -28,13 +28,14 @@ func (rc *resec) start() {
 				return
 			}
 
-			log.Printf("[DEBUG] Got redis replication status update:\n %s", update.output)
+			log.Printf("[DEBUG] Got redis replication info update")
 
 			if rc.consul.healthy {
 				// if we don't have any check id, we haven't registered our service yet
 				// let's do that first
 				if rc.redis.replicationStatus != "" {
 					if rc.consul.checkID == "" {
+						log.Printf("[DEBUG] Consul Check ID is not generated")
 						rc.registerService()
 					}
 
@@ -51,6 +52,8 @@ func (rc *resec) start() {
 						rc.handleConsulError(err)
 						log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
 					}
+				} else {
+					log.Printf("[DEBUG] Redis replication status is not defined")
 				}
 			} else {
 				log.Printf("[INFO] Consul is not healthy, skipping service check update")
@@ -66,20 +69,18 @@ func (rc *resec) start() {
 			// our state is now unhealthy, release the consul lock so someone else can
 			// acquire the consul leadership and become redis master
 			if !update.healthy {
-				log.Printf("[INFO] Redis replication status changed to NOT healthy")
+				log.Printf("[INFO] Redis status changed to NOT healthy")
 				rc.releaseConsulLock()
 				continue
 			}
 
-			log.Printf("[INFO] Redis replication status changed to healthy")
-			if rc.redis.replicationStatus == "slave" {
+			log.Printf("[INFO] Redis status changed to healthy")
+			if rc.redis.replicationStatus != "master" {
 				if err := rc.runAsSlave(rc.lastKnownMasterInfo.address, rc.lastKnownMasterInfo.port); err != nil {
 					log.Println(err)
 					continue
 				}
 			}
-
-			go rc.acquireConsulLeadership()
 
 		case update, ok := <-rc.consulMasterServiceCh:
 			if !ok {
@@ -99,7 +100,7 @@ func (rc *resec) start() {
 					go rc.acquireConsulLeadership()
 					continue
 				}
-				log.Printf("[DEBUG] Redis is not healthy, nothing to do here")
+				log.Printf("[DEBUG] No Master found in consul, but redis is not healthy, nothing to do here")
 
 			// multiple masters is not good
 			case masterCount > 1:
@@ -126,21 +127,13 @@ func (rc *resec) start() {
 
 				// todo(jippi): if we can't enslave our redis, we shouldn't try to do any further work
 				//              especially not updating our consul catalog entry
+				if !rc.redis.healthy {
+					continue
+				}
 				if err := rc.runAsSlave(rc.lastKnownMasterInfo.address, rc.lastKnownMasterInfo.port); err != nil {
 					log.Println(err)
 					continue
 				}
-
-				// change our internal state to being a slave
-				rc.redis.replicationStatus = "slave"
-				if err := rc.registerService(); err != nil {
-					log.Printf("[ERROR] Consul Service registration failed - %s", err)
-					continue
-				}
-
-				// if we are enslaved and our status is published in consul, lets go back to trying
-				// to acquire leadership / master role as well
-				go rc.acquireConsulLeadership()
 			}
 
 		// if our consul lock status has changed
@@ -173,8 +166,9 @@ func (rc *resec) start() {
 				log.Printf("[ERROR] %s", update.err)
 				rc.handleConsulError(update.err)
 
+
 				if !rc.consul.healthy {
-					return
+					continue
 				}
 
 				if rc.redis.replicationStatus == "master" {

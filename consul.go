@@ -51,9 +51,10 @@ func (rc *resec) acquireConsulLeadership() {
 		return
 	}
 
-	rc.consul.lockIsWaiting = false
 	rc.consul.lockErrorCh, err = rc.consul.lock.Lock(rc.consul.lockAbortCh)
 	if err != nil {
+		rc.consul.lockIsWaiting = false
+		rc.consul.lockIsHeld = false
 		rc.consul.lockStatusCh <- &consulLockStatus{
 			acquired: false,
 			err:      err,
@@ -90,7 +91,7 @@ func (rc *resec) handleWaitForLockError() {
 			break
 		}
 
-		log.Printf("[DEBUG] Lock Error chanel is closed")
+		log.Printf("[DEBUG] Lock Error channel is closed")
 
 		err := fmt.Errorf("Consul lock lost or error")
 		log.Printf("[DEBUG] %s", err)
@@ -178,7 +179,7 @@ func (rc *resec) registerService() error {
 		ServiceID: rc.consul.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
 			TTL:    rc.consul.ttl,
-			Status: "critical",
+			Status: "passing",
 			DeregisterCriticalServiceAfter: rc.consul.deregisterServiceAfter.String(),
 		},
 	}
@@ -220,7 +221,7 @@ func (rc *resec) watchConsulMasterService() error {
 	wp.Handler = func(idx uint64, data interface{}) {
 		switch masterConsulServiceStatus := data.(type) {
 		case []*consulapi.ServiceEntry:
-			log.Printf("[INFO] Received update for master from consul")
+			log.Printf("[DEBUG] Received update for master from consul")
 			rc.consulMasterServiceCh <- masterConsulServiceStatus
 
 		default:

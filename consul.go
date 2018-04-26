@@ -51,9 +51,10 @@ func (rc *resec) acquireConsulLeadership() {
 		return
 	}
 
-	rc.consul.lockIsWaiting = false
 	rc.consul.lockErrorCh, err = rc.consul.lock.Lock(rc.consul.lockAbortCh)
 	if err != nil {
+		rc.consul.lockIsWaiting = false
+		rc.consul.lockIsHeld = false
 		rc.consul.lockStatusCh <- &consulLockStatus{
 			acquired: false,
 			err:      err,
@@ -90,7 +91,7 @@ func (rc *resec) handleWaitForLockError() {
 			break
 		}
 
-		log.Printf("[DEBUG] Lock Error chanel is closed")
+		log.Printf("[DEBUG] Lock Error channel is closed")
 
 		err := fmt.Errorf("Consul lock lost or error")
 		log.Printf("[DEBUG] %s", err)

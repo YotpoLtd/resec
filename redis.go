@@ -16,6 +16,17 @@ func (rc *resec) runAsSlave(masterAddress string, masterPort int) error {
 	}
 
 	log.Printf("[INFO] Enslaved redis %s to be slave of %s:%d", rc.redis.address, masterAddress, masterPort)
+
+	// change our internal state to being a slave
+	rc.redis.replicationStatus = "slave"
+	if err := rc.registerService(); err != nil {
+		return fmt.Errorf("[ERROR] Consul Service registration failed - %s", err)
+	}
+
+	// if we are enslaved and our status is published in consul, lets go back to trying
+	// to acquire leadership / master role as well
+	go rc.acquireConsulLeadership()
+
 	return nil
 }
 

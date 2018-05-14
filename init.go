@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -35,13 +36,13 @@ const (
 
 // consul struct description
 type consul struct {
-	checkID                 string                  // consul check ID to register our service with
-	client                  *consulapi.Client       // consul client used to interact with Consul
-	clientConfig            *consulapi.Config       // consul client config
-	deregisterServiceAfter  time.Duration           // time to have the consul service in "failed" mode before consul will reap it
-	healthy                 bool                    // track if the consul backend is healthy or not
-	lock                    *consulapi.Lock         // consul log struct
-	lockAbortCh             chan struct{}           // channel will be closed when we want to abort waiting for the consul lock
+	checkID                  string                 // consul check ID to register our service with
+	client                   *consulapi.Client      // consul client used to interact with Consul
+	clientConfig             *consulapi.Config      // consul client config
+	deregisterServiceAfter   time.Duration          // time to have the consul service in "failed" mode before consul will reap it
+	healthy                  bool                   // track if the consul backend is healthy or not
+	lock                     *consulapi.Lock        // consul log struct
+	lockAbortCh              chan struct{}          // channel will be closed when we want to abort waiting for the consul lock
 	lockErrorCh              <-chan struct{}        // channel will be closed by Consul SDK when the held lock fails
 	lockIsHeld               bool                   // track if we currently hold the lock (aka redis master)
 	lockIsWaiting            bool                   // track if we are waiting for the lock to be released (trying to become master)
@@ -53,11 +54,11 @@ type consul struct {
 	lockStopWaiterHandlerCh  chan bool              // used to gracefully release the held lock
 	lockTTL                  time.Duration          // time-to-live for the lock (how frequently we need to update it to keep the ownership)
 	lockWaitHandlerRunning   bool                   // track if we are currently waiting to acquire the lock
-	serviceID               string                  // consul service ID (consul internal id) to use when registering the service
-	serviceName             string                  // the (human) service name to register our service as
-	serviceNamePrefix       string                  // an optional prefix for the consul service name
-	tags                    map[string][]string     // list of arbitrary consul tags to publish with the service
-	ttl                     string
+	serviceID                string                 // consul service ID (consul internal id) to use when registering the service
+	serviceName              string                 // the (human) service name to register our service as
+	serviceNamePrefix        string                 // an optional prefix for the consul service name
+	tags                     map[string][]string    // list of arbitrary consul tags to publish with the service
+	ttl                      string
 }
 
 // consulLockStatus is our internal representation of the consul lock health / avaibility
@@ -105,7 +106,7 @@ type resec struct {
 }
 
 // setup returns the default configuration for the ReSeC
-func setup() *resec {
+func setup() (*resec, error) {
 	config := &resec{
 		consul: &consul{
 			clientConfig: &consulapi.Config{
@@ -156,11 +157,17 @@ func setup() *resec {
 	if masterTags := os.Getenv(MasterTags); masterTags != "" {
 		config.consul.tags["master"] = strings.Split(masterTags, ",")
 	} else if config.consul.serviceName != "" {
-		log.Fatalf("[FATAL] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
+		return nil, fmt.Errorf("[FATAL] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
 	}
 
 	if slaveTags := os.Getenv(SlaveTags); slaveTags != "" {
 		config.consul.tags["slave"] = strings.Split(slaveTags, ",")
+	}
+
+	if len(config.consul.tags["slave"]) >= 1 && len(config.consul.tags["master"]) >= 1 {
+		if config.consul.tags["slave"][0] == config.consul.tags["master"][0] {
+			return nil, fmt.Errorf("The first tag in %s and %s must be unique", MasterTags, SlaveTags)
+		}
 	}
 
 	if consulLockKey := os.Getenv(ConsulLockKey); consulLockKey != "" {
@@ -174,30 +181,28 @@ func setup() *resec {
 	if consulLockMonitorRetries := os.Getenv(ConsulLockMonitorRetries); consulLockMonitorRetries != "" {
 		consulLockMonitorRetriesInt, err := strconv.Atoi(consulLockMonitorRetries)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as int, using default %d ", ConsulLockMonitorRetries, consulLockMonitorRetries, config.consul.lockMonitorRetries)
-		} else {
-			config.consul.lockMonitorRetries = consulLockMonitorRetriesInt
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as int, using default %d ", ConsulLockMonitorRetries, consulLockMonitorRetries, config.consul.lockMonitorRetries)
 		}
+
+		config.consul.lockMonitorRetries = consulLockMonitorRetriesInt
 	}
 
 	if consulLockMonitorRetryInterval := os.Getenv(ConsulLockMonitorRetryInterval); consulLockMonitorRetryInterval != "" {
 		consulLockMonitorRetryIntervalDuration, err := time.ParseDuration(consulLockMonitorRetryInterval)
-
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, config.consul.lockMonitorRetryInterval)
-		} else {
-			config.consul.lockMonitorRetryInterval = consulLockMonitorRetryIntervalDuration
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, config.consul.lockMonitorRetryInterval)
 		}
+
+		config.consul.lockMonitorRetryInterval = consulLockMonitorRetryIntervalDuration
 	}
 
 	if healthCheckInterval := os.Getenv(HealthCheckInterval); healthCheckInterval != "" {
 		healthCheckIntervalDuration, err := time.ParseDuration(healthCheckInterval)
-
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckInterval, healthCheckInterval, config.healthCheckInterval)
-		} else {
-			config.healthCheckInterval = healthCheckIntervalDuration
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckInterval, healthCheckInterval, config.healthCheckInterval)
 		}
+
+		config.healthCheckInterval = healthCheckIntervalDuration
 	}
 
 	// setting Consul Check TTL to be 2 * Check Interval
@@ -206,31 +211,32 @@ func setup() *resec {
 	if healthCheckTimeout := os.Getenv(HealthCheckTimeout); healthCheckTimeout != "" {
 		healthCheckTimeOutDuration, err := time.ParseDuration(healthCheckTimeout)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckTimeout, healthCheckTimeout, config.healthCheckTimeout)
-		} else {
-			config.healthCheckTimeout = healthCheckTimeOutDuration
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckTimeout, healthCheckTimeout, config.healthCheckTimeout)
 		}
+
+		config.healthCheckTimeout = healthCheckTimeOutDuration
 	}
 
 	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
 		consulDeregisterServiceAfterDuration, err := time.ParseDuration(consulDeregisterServiceAfter)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, config.consul.deregisterServiceAfter)
-		} else {
-			config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, config.consul.deregisterServiceAfter)
 		}
+
+		config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
+
 	}
 
 	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
 		consuLockTTLDuration, err := time.ParseDuration(consuLockTTL)
 		if err != nil {
-			log.Printf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockTTL, consuLockTTL, config.consul.lockTTL)
-		} else {
-			if consuLockTTLDuration < time.Second*15 {
-				log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
-			}
-			config.consul.lockTTL = consuLockTTLDuration
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockTTL, consuLockTTL, config.consul.lockTTL)
 		}
+
+		if consuLockTTLDuration < time.Second*15 {
+			log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
+		}
+		config.consul.lockTTL = consuLockTTLDuration
 	}
 
 	if redisAddr := os.Getenv(RedisAddr); redisAddr != "" {
@@ -261,7 +267,7 @@ func setup() *resec {
 	config.announceHost = strings.Split(config.announceAddr, ":")[0]
 	config.announcePort, err = strconv.Atoi(strings.Split(config.announceAddr, ":")[1])
 	if err != nil {
-		log.Printf("[ERROR] Trouble extracting port number from [%s]", config.redis.address)
+		return nil, fmt.Errorf("[ERROR] Trouble extracting port number from [%s]", config.redis.address)
 	}
 
 	// initialise redis as unhealthy
@@ -282,8 +288,8 @@ func setup() *resec {
 	config.consul.client, err = consulapi.NewClient(config.consul.clientConfig)
 
 	if err != nil {
-		log.Fatalf("[CRITICAL] Can't initialize consul client %s", err)
+		return nil, fmt.Errorf("[CRITICAL] Can't initialize consul client %s", err)
 	}
 
-	return config
+	return config, nil
 }

@@ -157,7 +157,7 @@ func setup() (*resec, error) {
 	if masterTags := os.Getenv(MasterTags); masterTags != "" {
 		config.consul.tags["master"] = strings.Split(masterTags, ",")
 	} else if config.consul.serviceName != "" {
-		return nil, fmt.Errorf("[FATAL] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
+		return nil, fmt.Errorf("[ERROR] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
 	}
 
 	if slaveTags := os.Getenv(SlaveTags); slaveTags != "" {
@@ -166,7 +166,7 @@ func setup() (*resec, error) {
 
 	if len(config.consul.tags["slave"]) >= 1 && len(config.consul.tags["master"]) >= 1 {
 		if config.consul.tags["slave"][0] == config.consul.tags["master"][0] {
-			return nil, fmt.Errorf("The first tag in %s and %s must be unique", MasterTags, SlaveTags)
+			return nil, fmt.Errorf("[ERROR] The first tag in %s and %s must be unique", MasterTags, SlaveTags)
 		}
 	}
 
@@ -181,7 +181,7 @@ func setup() (*resec, error) {
 	if consulLockMonitorRetries := os.Getenv(ConsulLockMonitorRetries); consulLockMonitorRetries != "" {
 		consulLockMonitorRetriesInt, err := strconv.Atoi(consulLockMonitorRetries)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as int, using default %d ", ConsulLockMonitorRetries, consulLockMonitorRetries, config.consul.lockMonitorRetries)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as int: %s", ConsulLockMonitorRetries, consulLockMonitorRetries, err)
 		}
 
 		config.consul.lockMonitorRetries = consulLockMonitorRetriesInt
@@ -190,7 +190,7 @@ func setup() (*resec, error) {
 	if consulLockMonitorRetryInterval := os.Getenv(ConsulLockMonitorRetryInterval); consulLockMonitorRetryInterval != "" {
 		consulLockMonitorRetryIntervalDuration, err := time.ParseDuration(consulLockMonitorRetryInterval)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, config.consul.lockMonitorRetryInterval)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, err)
 		}
 
 		config.consul.lockMonitorRetryInterval = consulLockMonitorRetryIntervalDuration
@@ -199,7 +199,7 @@ func setup() (*resec, error) {
 	if healthCheckInterval := os.Getenv(HealthCheckInterval); healthCheckInterval != "" {
 		healthCheckIntervalDuration, err := time.ParseDuration(healthCheckInterval)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckInterval, healthCheckInterval, config.healthCheckInterval)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", HealthCheckInterval, healthCheckInterval, err)
 		}
 
 		config.healthCheckInterval = healthCheckIntervalDuration
@@ -211,7 +211,7 @@ func setup() (*resec, error) {
 	if healthCheckTimeout := os.Getenv(HealthCheckTimeout); healthCheckTimeout != "" {
 		healthCheckTimeOutDuration, err := time.ParseDuration(healthCheckTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", HealthCheckTimeout, healthCheckTimeout, config.healthCheckTimeout)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", HealthCheckTimeout, healthCheckTimeout, err)
 		}
 
 		config.healthCheckTimeout = healthCheckTimeOutDuration
@@ -220,7 +220,7 @@ func setup() (*resec, error) {
 	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
 		consulDeregisterServiceAfterDuration, err := time.ParseDuration(consulDeregisterServiceAfter)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, config.consul.deregisterServiceAfter)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, err)
 		}
 
 		config.consul.deregisterServiceAfter = consulDeregisterServiceAfterDuration
@@ -230,12 +230,13 @@ func setup() (*resec, error) {
 	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
 		consuLockTTLDuration, err := time.ParseDuration(consuLockTTL)
 		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time, using default %d", ConsulLockTTL, consuLockTTL, config.consul.lockTTL)
+			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulLockTTL, consuLockTTL, err)
 		}
 
 		if consuLockTTLDuration < time.Second*15 {
-			log.Fatalf("[CRITICAL] Minimum Consul lock session TTL is 15s")
+			return nil, fmt.Errorf("[CRITICAL] Minimum Consul lock session TTL is 15s")
 		}
+
 		config.consul.lockTTL = consuLockTTLDuration
 	}
 

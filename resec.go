@@ -166,7 +166,6 @@ func (rc *resec) start() {
 				log.Printf("[ERROR] %s", update.err)
 				rc.handleConsulError(update.err)
 
-
 				if !rc.consul.healthy {
 					continue
 				}

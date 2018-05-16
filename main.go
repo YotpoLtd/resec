@@ -7,7 +7,10 @@ import (
 func main() {
 	log.Println("[INFO] Start!")
 
-	resec := setup()
+	resec, err := setup()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	go resec.watchRedisReplicationStatus()
 	go resec.watchConsulMasterService()

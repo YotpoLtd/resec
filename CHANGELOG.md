@@ -1,3 +1,10 @@
+## 0.4.1 (May 16, 2018)
+
+FEATURES:
+
+  * Prevent master and slave tag having index 0 identical when using CONSUL_SERVICE_NAME
+  * Test!
+
 ## 0.4.0 (April 26, 2018)
 
 FEATURES:

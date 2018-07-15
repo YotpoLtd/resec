@@ -1,4 +1,11 @@
-## 0.4.2 (July 15. 2018)
+## 0.4.3 (July 15, 2018)
+
+FIXES:
+
+  * Allow same Master and Slave tags when using CONSUL_SERVICE_PREFIX
+
+
+## 0.4.2 (July 15, 2018)
 
 FEATURES:
 

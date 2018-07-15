@@ -164,9 +164,11 @@ func setup() (*resec, error) {
 		config.consul.tags["slave"] = strings.Split(slaveTags, ",")
 	}
 
-	if len(config.consul.tags["slave"]) >= 1 && len(config.consul.tags["master"]) >= 1 {
-		if config.consul.tags["slave"][0] == config.consul.tags["master"][0] {
-			return nil, fmt.Errorf("[ERROR] The first tag in %s and %s must be unique", MasterTags, SlaveTags)
+	if config.consul.serviceName != "" {
+		if len(config.consul.tags["slave"]) >= 1 && len(config.consul.tags["master"]) >= 1 {
+			if config.consul.tags["slave"][0] == config.consul.tags["master"][0] {
+				return nil, fmt.Errorf("[PANIC] The first tag in %s and %s must be unique", MasterTags, SlaveTags)
+			}
 		}
 	}
 

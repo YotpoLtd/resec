@@ -1,3 +1,9 @@
+## 0.4.2 (July 15. 2018)
+
+FEATURES:
+
+  * Verbose Health Check names giving the option to distinguish checks of multiple Resec instances running on the same node 
+
 ## 0.4.1 (May 16, 2018)
 
 FEATURES:

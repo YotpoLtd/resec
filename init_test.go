@@ -18,17 +18,19 @@ func Test_setupTags(t *testing.T) {
 		{
 			name: "unique tags error",
 			env: map[string]string{
-				MasterTags: "ok,fine",
-				SlaveTags:  "ok,fine",
+				ConsulServiceName: "resec",
+				MasterTags:        "ok,fine",
+				SlaveTags:         "ok,fine",
 			},
 			want:    nil,
-			wantErr: fmt.Errorf("[ERROR] The first tag in MASTER_TAGS and SLAVE_TAGS must be unique"),
+			wantErr: fmt.Errorf("[PANIC] The first tag in MASTER_TAGS and SLAVE_TAGS must be unique"),
 		},
 		{
 			name: "unique tags ok",
 			env: map[string]string{
-				MasterTags: "something,fine",
-				SlaveTags:  "else,fine",
+				ConsulServiceName: "resec",
+				MasterTags:        "something,fine",
+				SlaveTags:         "else,fine",
 			},
 			want: &resec{
 				consul: &consul{

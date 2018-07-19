@@ -73,6 +73,9 @@ func (cc *consulConnection) cleanup() {
 	cc.logger.Debug("Deregister service")
 	cc.deregisterService()
 
+	cc.logger.Debugf("Kill session")
+	cc.deregisterSession()
+
 	cc.logger.Debug("Closing stopCh")
 	close(cc.stopCh)
 }
@@ -182,12 +185,14 @@ func (cc *consulConnection) registerService(redisState redisState) error {
 	}
 
 	nameToRegister := cc.config.serviceName
+	serviceID := cc.config.serviceName
 
 	if nameToRegister == "" {
 		nameToRegister = cc.config.serviceNamePrefix + "-" + replicationStatus
+		serviceID = cc.config.serviceNamePrefix
 	}
 
-	cc.config.serviceID = nameToRegister + ":" + strconv.Itoa(cc.config.announcePort)
+	cc.config.serviceID = serviceID + "@" + cc.config.announceAddr
 	cc.config.checkID = cc.config.serviceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
@@ -222,8 +227,8 @@ func (cc *consulConnection) registerService(redisState redisState) error {
 		ID:        cc.config.checkID,
 		ServiceID: cc.config.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL:    cc.config.ttl.String(),
-			Status: "passing",
+			TTL:    (10 * time.Second).String(),
+			Status: "warning",
 			DeregisterCriticalServiceAfter: cc.config.deregisterServiceAfter.String(),
 		},
 	}
@@ -242,11 +247,25 @@ func (cc *consulConnection) deregisterService() {
 		cc.handleConsulError(err)
 		cc.logger.Error("Can't deregister consul service, %s", err)
 	}
+
+	cc.config.serviceID = ""
+	cc.config.checkID = ""
+}
+
+func (cc *consulConnection) deregisterSession() {
+	cc.client.Session().Destroy(cc.config.sessionName, nil)
 }
 
 // setConsulCheckStatus sets consul status check
-func (cc *consulConnection) setConsulCheckStatus(output, status string) error {
-	return cc.client.Agent().UpdateTTL(cc.config.checkID, output, status)
+func (cc *consulConnection) setConsulCheckStatus(redisState redisState) {
+	if cc.config.checkID == "" {
+		cc.registerService(redisState)
+	}
+
+	err := cc.client.Agent().UpdateTTL(cc.config.checkID, redisState.replicationString, "passing")
+	if err != nil {
+		cc.handleConsulError(err)
+	}
 }
 
 // watchConsulMasterService starts watching the service (+ tags) that represents the
@@ -347,6 +366,7 @@ func (cc *consulConnection) start() {
 	go cc.loop()
 
 	cc.state.ready = true
+	cc.emit(nil)
 }
 
 func newConsulConnection(config *config, redisConfig *redisConfig) (*consulConnection, error) {

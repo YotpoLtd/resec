@@ -29,14 +29,41 @@ type redisConfig struct {
 
 // Redis state represent the full state of the connection with Redis
 type redisState struct {
-	ready              bool
+	address            string
 	connected          bool
 	connectionFailures int
-	replicationLag     time.Duration
 	err                error
-	replication        map[string]string
-	address            string
 	port               int
+	ready              bool
+	replication        redisReplicationState
+	replicationString  string
+}
+
+type redisReplicationState struct {
+	role            string
+	connectedSlaves int
+	masterHost      string
+	masterPort      int
+}
+
+func (r *redisReplicationState) changed(new redisReplicationState) bool {
+	if r.role != new.role {
+		return true
+	}
+
+	if r.connectedSlaves != new.connectedSlaves {
+		return true
+	}
+
+	if r.masterHost != new.masterHost {
+		return true
+	}
+
+	if r.masterPort != new.masterPort {
+		return true
+	}
+
+	return false
 }
 
 func (rc *redisConnection) emit(err error) {
@@ -73,24 +100,25 @@ func (rc *redisConnection) runAsMaster() error {
 
 func (rc *redisConnection) start() {
 	go rc.watchReplicationStatus()
-	go rc.watchServerStatus()
+	// go rc.watchServerStatus()
 	rc.waitForRedisToBeReady()
 
 	for {
-		if len(rc.state.replication) == 0 {
+		if rc.state.replication.role == "" {
 			rc.logger.Info("Missing replication info to be ready")
 			time.Sleep(250 * time.Millisecond)
 			continue
 		}
 
 		rc.state.ready = true
+		rc.emit(nil)
 		return
 	}
 }
 
 // watchReplicationStatus checks redis replication status
 func (rc *redisConnection) watchReplicationStatus() {
-	ticker := time.NewTicker(rc.config.healthCheckInterval)
+	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
 		rc.logger.Debug("Checking redis replication status")
@@ -100,9 +128,35 @@ func (rc *redisConnection) watchReplicationStatus() {
 			err = fmt.Errorf("Can't connect to redis running on %s", rc.config.address)
 		}
 
-		rc.state.err = err
-		rc.state.replication = parseKeyValue(result)
+		kvPair := parseKeyValue(result)
+		replicationState := redisReplicationState{}
+		replicationState.role = kvPair["role"]
 
+		if connectedSlavesString, ok := kvPair["connected_slaves"]; ok {
+			connectedSlaves, err := strconv.Atoi(connectedSlavesString)
+			if err == nil {
+				replicationState.connectedSlaves = connectedSlaves
+			}
+		}
+
+		if masterHost, ok := kvPair["master_host"]; ok {
+			replicationState.masterHost = masterHost
+		}
+
+		if masterPortString, ok := kvPair["master_port"]; ok {
+			masterPort, err := strconv.Atoi(masterPortString)
+			if err == nil {
+				replicationState.masterPort = masterPort
+			}
+		}
+
+		if replicationState.changed(rc.state.replication) == false {
+			rc.logger.Debugf("Redis replication state did not change")
+			continue
+		}
+
+		rc.state.replication = replicationState
+		rc.state.replicationString = result
 		rc.emit(nil)
 	}
 }
@@ -113,7 +167,7 @@ func (rc *redisConnection) watchServerStatus() {
 	connectionErrors := 0
 	allowedConnectionErrors := 3
 
-	ticker := time.NewTicker(rc.config.healthCheckInterval)
+	ticker := time.NewTicker(time.Second)
 	for ; true; <-ticker.C {
 		rc.logger.Debug("Checking redis server info")
 
@@ -161,7 +215,7 @@ func (rc *redisConnection) waitForRedisToBeReady() {
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready
-		if len(rc.state.replication) > 0 {
+		if rc.state.replication.role != "" {
 			return
 		}
 	}

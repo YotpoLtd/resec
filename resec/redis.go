@@ -46,6 +46,8 @@ type redisReplicationState struct {
 	masterPort      int
 }
 
+// changed will test if the current replication state is different from
+// the new one passed in as argument
 func (r *redisReplicationState) changed(new redisReplicationState) bool {
 	if r.role != new.role {
 		return true
@@ -66,21 +68,23 @@ func (r *redisReplicationState) changed(new redisReplicationState) bool {
 	return false
 }
 
+// emit will send a state update to the reconsiler
 func (rc *redisConnection) emit(err error) {
 	rc.state.err = err
 	rc.stateCh <- *rc.state
 }
 
+// cleanup will do cleanup tasks needed for clean shutdown of the reconsiler
 func (rc *redisConnection) cleanup() {
 
 }
 
 // runAsSlave sets the instance to be a slave for the master
 func (rc *redisConnection) runAsSlave(masterAddress string, masterPort int) error {
-	rc.logger.Debugf("Enslaving redis %s to be slave of %s:%d", rc.config.address, masterAddress, masterPort)
+	rc.logger.Infof("Enslaving redis %s to be slave of %s:%d", rc.config.address, masterAddress, masterPort)
 
 	if err := rc.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
-		return fmt.Errorf("[ERROR] Could not enslave redis %s to be slave of %s:%d (%v)", rc.config.address, masterAddress, masterPort, err)
+		return fmt.Errorf("Could not enslave redis %s to be slave of %s:%d (%v)", rc.config.address, masterAddress, masterPort, err)
 	}
 
 	rc.logger.Infof("Enslaved redis %s to be slave of %s:%d", rc.config.address, masterAddress, masterPort)
@@ -94,7 +98,6 @@ func (rc *redisConnection) runAsMaster() error {
 	}
 
 	rc.logger.Info("Promoted redis to Master")
-
 	return nil
 }
 
@@ -129,6 +132,7 @@ func (rc *redisConnection) watchReplicationStatus() {
 		}
 
 		kvPair := parseKeyValue(result)
+
 		replicationState := redisReplicationState{}
 		replicationState.role = kvPair["role"]
 
@@ -211,7 +215,7 @@ func (rc *redisConnection) watchServerStatus() {
 // waitForRedisToBeReady will check if we got the initial redis state we need
 // for the reconsiler to do its job right out of the box
 func (rc *redisConnection) waitForRedisToBeReady() {
-	t := time.NewTicker(250 * time.Millisecond)
+	t := time.NewTicker(time.Second)
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready

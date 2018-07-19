@@ -2,7 +2,6 @@ package resec
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -14,18 +13,19 @@ import (
 )
 
 type consulConnection struct {
-	logger       *log.Entry
-	client       *consulapi.Client
-	clientConfig *consulapi.Config
-	config       *consulConfig
-	state        *consulState
-	stateCh      chan consulState
-	lockCh       <-chan struct{}
-	lockErrorCh  <-chan struct{}
-	stopCh       chan interface{}
+	logger       *log.Entry        // logger for the consul connection struct
+	client       *consulapi.Client // consul API client
+	clientConfig *consulapi.Config // consul API client configuration
+	config       *consulConfig     // configuration for this connection
+	state        *consulState      // state used by the reconsiler
+	stateCh      chan consulState  // state channel used to notify the reconsiler of changes
+	lockCh       <-chan struct{}   // lock channel used by Consul SDK to notify about changes
+	lockErrorCh  <-chan struct{}   // lock error channel used by Consul SDK to notify about errors related to the lock
+	stopCh       chan interface{}  // internal channel used to stop all go-routines when gracefully shutting down
+	masterCh     chan interface{}  // notification channel used to notify the Consul Lock go-routing that the master service changed
 }
 
-// Consul state represent the full state of the connection with Consul
+// Consul state used by the reconsiler to decide what actions to take
 type consulState struct {
 	ready      bool
 	err        error
@@ -34,6 +34,7 @@ type consulState struct {
 	masterPort int
 }
 
+// Consul config used for internal state management
 type consulConfig struct {
 	shuttingDown             bool
 	announceAddr             string
@@ -46,7 +47,7 @@ type consulConfig struct {
 	lockMonitorRetries       int
 	lockMonitorRetryInterval time.Duration
 	lockSessionName          string
-	lockStopWaiterHandlerCh  chan interface{}
+	voluntarilyReleaseLockCh chan interface{}
 	lockTTL                  time.Duration
 	monitorRetries           int
 	monitorRetryTime         time.Duration
@@ -59,11 +60,13 @@ type consulConfig struct {
 	ttl                      time.Duration
 }
 
+// emit will emit a consul state change to the reconsiler
 func (cc *consulConnection) emit(err error) {
 	cc.state.err = err
 	cc.stateCh <- *cc.state
 }
 
+// cleanup will do cleanup tasks when the reconsiler is shutting down
 func (cc *consulConnection) cleanup() {
 	cc.config.shuttingDown = true
 
@@ -73,16 +76,13 @@ func (cc *consulConnection) cleanup() {
 	cc.logger.Debug("Deregister service")
 	cc.deregisterService()
 
-	cc.logger.Debugf("Kill session")
-	cc.deregisterSession()
-
 	cc.logger.Debug("Closing stopCh")
 	close(cc.stopCh)
 }
 
-// acquireConsulLeadership waits for lock to the Consul KV key.
+// continuouslyAcquireConsulLeadership waits to acquire the lock to the Consul KV key.
 // it will run until the stopCh is closed
-func (cc *consulConnection) acquireConsulLeadership() {
+func (cc *consulConnection) continuouslyAcquireConsulLeadership() {
 	t := time.NewTicker(250 * time.Millisecond)
 
 	for {
@@ -90,69 +90,92 @@ func (cc *consulConnection) acquireConsulLeadership() {
 		case <-cc.stopCh:
 			return
 
+		case <-cc.masterCh:
+			cc.acquireConsulLeadership()
+
 		case <-t.C:
-			if cc.state.lockIsHeld {
-				cc.logger.Debug("Lock is already held")
-				continue
-			}
-
-			var err error
-
-			cc.logger.Info("Trying to acquire consul leadership")
-			cc.config.lock, err = cc.client.LockOpts(cc.consulLockOptions())
-			if err != nil {
-				cc.logger.Error("Failed setting lock options - %s", err)
-				continue
-			}
-
-			cc.lockErrorCh, err = cc.config.lock.Lock(cc.lockCh)
-			if err != nil {
-				if !strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers") {
-					cc.logger.Errorf("Failed getting lock - %s", err)
-				}
-				continue
-			}
-
-			cc.logger.Info("Lock acquired")
-
-			cc.state.lockIsHeld = true
-			cc.emit(nil)
-
-			cc.handleWaitForLockError()
+			cc.acquireConsulLeadership()
 		}
 	}
 }
 
-// handleWaitForLockError will wait for the consul lock to close
-// meaning we've lost the lock and should step down as leader in our internal
-// state as well
-func (cc *consulConnection) handleWaitForLockError() {
-	cc.logger.Debug("Starting Consul Lock Error Handler")
+// acquireConsulLeadership will one-off try to acquire the consul lock needed to become
+// redis Master node
+func (cc *consulConnection) acquireConsulLeadership() {
+	// if we already hold the lock, we can't acquire it again
+	if cc.state.lockIsHeld {
+		cc.logger.Debug("Lock is already held")
+		return
+	}
 
-	cc.config.lockStopWaiterHandlerCh = make(chan interface{})
+	var err error
+
+	cc.logger.Info("Trying to acquire consul leadership")
+	lockOptions := &consulapi.LockOptions{
+		Key:              cc.config.lockKey,
+		SessionName:      cc.config.lockSessionName,
+		SessionTTL:       cc.config.lockTTL.String(),
+		MonitorRetries:   cc.config.lockMonitorRetries,
+		MonitorRetryTime: cc.config.lockMonitorRetryInterval,
+	}
+
+	// create the lock structs
+	cc.config.lock, err = cc.client.LockOpts(lockOptions)
+	if err != nil {
+		cc.logger.Error("Failed create lock options: %+v", err)
+		return
+	}
+
+	// try to acquire the lock
+	cc.lockErrorCh, err = cc.config.lock.Lock(cc.lockCh)
+	if err != nil {
+		cc.logger.Errorf("Failed getting lock - %s", err)
+		return
+	}
+
+	cc.logger.Info("Lock successfully acquired")
+
+	cc.state.lockIsHeld = true
+	cc.emit(nil)
+
+	//
+	// start monitoring the consul lock for errors / changes
+	//
+
+	cc.config.voluntarilyReleaseLockCh = make(chan interface{})
 
 	select {
-	case <-cc.stopCh:
-		cc.state.lockIsHeld = false
-		cc.emit(nil)
 
+	// global stop of all go-routines, reconsiler is shutting down
+	case <-cc.stopCh:
+		return
+
+	// we lost the lock if the channel is closed
 	case data, ok := <-cc.lockErrorCh:
-		if ok {
-			cc.logger.Debugf("Something wrote to lock error channel %v ", data)
-			break
+		if !ok {
+			cc.logger.Error("Lock error channel was closed, lock is no longer held")
+
+			cc.state.lockIsHeld = false
+			cc.emit(err)
+
+			return
 		}
 
-		cc.logger.Debug("Lock Error channel is closed")
+		cc.logger.Debugf("Something wrote to lock error channel %+v", data)
 
-		err := fmt.Errorf("Consul lock lost or error")
-		cc.logger.Error(err)
+	// voluntarily release our claim on the lock
+	case <-cc.config.voluntarilyReleaseLockCh:
+		cc.logger.Warnf("Voluntarily releasing the lock")
+
+		err := cc.config.lock.Unlock()
+		if err != nil {
+			cc.logger.Errorf("Can't release consul lock: %v", err)
+		} else {
+			cc.logger.Debug("lock released!")
+		}
 
 		cc.state.lockIsHeld = false
-		cc.emit(err)
-
-	case <-cc.config.lockStopWaiterHandlerCh:
-		cc.logger.Debugf("Stopped Consul Lock Error handler")
-		return
+		cc.emit(nil)
 	}
 }
 
@@ -164,17 +187,7 @@ func (cc *consulConnection) releaseConsulLock() {
 	}
 
 	cc.logger.Debug("Lock is held, releasing")
-
-	err := cc.config.lock.Unlock()
-	if err != nil {
-		cc.logger.Errorf("Can't release consul lock: %v", err)
-		return
-	}
-	close(cc.config.lockStopWaiterHandlerCh)
-	cc.logger.Debug("lock released!")
-
-	cc.state.lockIsHeld = false
-	cc.emit(nil)
+	close(cc.config.voluntarilyReleaseLockCh)
 }
 
 // registerService registers a service in consul
@@ -242,6 +255,7 @@ func (cc *consulConnection) registerService(redisState redisState) error {
 	return nil
 }
 
+// deregisterService will deregister the consul service from Consul catalog
 func (cc *consulConnection) deregisterService() {
 	if err := cc.client.Agent().ServiceDeregister(cc.config.serviceID); err != nil {
 		cc.handleConsulError(err)
@@ -252,11 +266,7 @@ func (cc *consulConnection) deregisterService() {
 	cc.config.checkID = ""
 }
 
-func (cc *consulConnection) deregisterSession() {
-	cc.client.Session().Destroy(cc.config.sessionName, nil)
-}
-
-// setConsulCheckStatus sets consul status check
+// setConsulCheckStatus sets consul status check TTL and output
 func (cc *consulConnection) setConsulCheckStatus(redisState redisState) {
 	if cc.config.checkID == "" {
 		cc.registerService(redisState)
@@ -310,6 +320,8 @@ func (cc *consulConnection) watchConsulMasterService() error {
 		cc.state.masterAddr = master.Node.Address
 		cc.state.masterPort = master.Service.Port
 		cc.emit(nil)
+
+		cc.masterCh <- true
 	}
 
 	if err := wp.Run(cc.clientConfig.Address); err != nil {
@@ -317,16 +329,6 @@ func (cc *consulConnection) watchConsulMasterService() error {
 	}
 
 	return nil
-}
-
-func (cc *consulConnection) consulLockOptions() *consulapi.LockOptions {
-	return &consulapi.LockOptions{
-		Key:              cc.config.lockKey,
-		SessionName:      cc.config.lockSessionName,
-		SessionTTL:       cc.config.lockTTL.String(),
-		MonitorRetries:   cc.config.lockMonitorRetries,
-		MonitorRetryTime: cc.config.lockMonitorRetryInterval,
-	}
 }
 
 // handleConsulError is the error handler
@@ -343,7 +345,7 @@ func (cc *consulConnection) handleConsulError(err error) {
 }
 
 func (cc *consulConnection) loop() {
-	go cc.acquireConsulLeadership()
+	go cc.continuouslyAcquireConsulLeadership()
 	go cc.watchConsulMasterService()
 
 	t := time.NewTicker(250 * time.Millisecond)
@@ -476,10 +478,6 @@ func newConsulConnection(config *config, redisConfig *redisConfig) (*consulConne
 	}
 
 	clientConfig := consulapi.DefaultConfig()
-	clientConfig.HttpClient = &http.Client{
-		Timeout: 1 * time.Second,
-	}
-
 	connection := &consulConnection{}
 	connection.logger = log.WithField("system", "consul")
 	connection.stopCh = make(chan interface{}, 1)

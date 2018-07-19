@@ -1,4 +1,4 @@
-package main
+package resec
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // runAsSlave sets the instance to be a slave for the master
-func (rc *resec) runAsSlave(masterAddress string, masterPort int) error {
+func (rc *app) runAsSlave(masterAddress string, masterPort int) error {
 	log.Printf("[DEBUG] Enslaving redis %s to be slave of %s:%d", rc.redis.address, masterAddress, masterPort)
 
 	if err := rc.redis.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
@@ -32,7 +32,7 @@ func (rc *resec) runAsSlave(masterAddress string, masterPort int) error {
 }
 
 // runAsMaster sets the instance to be the master
-func (rc *resec) runAsMaster() error {
+func (rc *app) runAsMaster() error {
 	if err := rc.redis.client.SlaveOf("no", "one").Err(); err != nil {
 		return err
 	}
@@ -41,8 +41,8 @@ func (rc *resec) runAsMaster() error {
 	return nil
 }
 
-// watchRedisReplicationStatus checks redis replication status
-func (rc *resec) watchRedisReplicationStatus() {
+// WatchRedisReplicationStatus checks redis replication status
+func (rc *app) WatchRedisReplicationStatus() {
 	ticker := time.NewTicker(rc.healthCheckInterval)
 
 	for ; true; <-ticker.C {
@@ -62,7 +62,7 @@ func (rc *resec) watchRedisReplicationStatus() {
 }
 
 // watchRedisUptime checks redis server uptime
-func (rc *resec) watchRedisUptime() {
+func (rc *app) WatchRedisUptime() {
 	lastUptime := 0
 	connectionErrors := 0
 	allowedConnectionErrors := 3
@@ -108,11 +108,14 @@ func (rc *resec) watchRedisUptime() {
 	}
 }
 
-func (rc *resec) waitForRedisToBeReady() {
+func (rc *app) WaitForRedisToBeReady() {
 	t := time.NewTicker(time.Second)
 
 	for {
 		select {
+		case <-rc.sigCh:
+			return
+
 		case <-t.C:
 			persistenceString, err := rc.redis.client.Info("persistence").Result()
 			if err != nil {

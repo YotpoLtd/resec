@@ -1,4 +1,4 @@
-package main
+package resec
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ func Test_setupTags(t *testing.T) {
 	tests := []struct {
 		name    string
 		env     map[string]string
-		want    *resec
+		want    *app
 		wantErr error
 	}{
 		{
@@ -32,7 +32,7 @@ func Test_setupTags(t *testing.T) {
 				MasterTags:        "something,fine",
 				SlaveTags:         "else,fine",
 			},
-			want: &resec{
+			want: &app{
 				consul: &consul{
 					tags: map[string][]string{
 						"master": []string{"something", "fine"},
@@ -52,7 +52,7 @@ func Test_setupTags(t *testing.T) {
 
 			assert := assert.New(t)
 
-			got, err := setup()
+			got, err := Setup()
 			if tt.wantErr != nil {
 				assert.EqualError(err, tt.wantErr.Error())
 				return

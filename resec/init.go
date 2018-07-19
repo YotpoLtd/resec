@@ -1,4 +1,4 @@
-package main
+package resec
 
 import (
 	"fmt"
@@ -90,9 +90,9 @@ type redisHealth struct {
 	healthy bool   // wether we successfully could talk to redis or not
 }
 
-// resec core struct
+// app core struct
 // holds references to other structs with internal state
-type resec struct {
+type app struct {
 	announceAddr          string                         // what IP we should publish to Consul (default "")
 	announceHost          string                         // ??
 	announcePort          int                            // what Port we should publish to Consul (default "")
@@ -110,8 +110,8 @@ type resec struct {
 }
 
 // setup returns the default configuration for the ReSeC
-func setup() (*resec, error) {
-	config := &resec{
+func Setup() (*app, error) {
+	config := &app{
 		consul: &consul{
 			clientConfig: &consulapi.Config{
 				HttpClient: &http.Client{

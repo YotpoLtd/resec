@@ -1,4 +1,4 @@
-package main
+package resec
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ var (
 
 // acquireConsulLeadership waits for lock to the Consul KV key.
 // This will ensure we are the only master is holding a lock and registered
-func (rc *resec) acquireConsulLeadership() {
+func (rc *app) acquireConsulLeadership() {
 	if rc.consul.lockIsHeld {
 		log.Printf("[DEBUG] Lock is already held")
 		return
@@ -78,7 +78,7 @@ func (rc *resec) acquireConsulLeadership() {
 // handleWaitForLockError will wait for the consul lock to close
 // meaning we've lost the lock and should step down as leader in our internal
 // state as well
-func (rc *resec) handleWaitForLockError() {
+func (rc *app) handleWaitForLockError() {
 	log.Printf("[DEBUG] Starting Consul Lock Error Handler")
 
 	rc.consul.lockWaitHandlerRunning = true
@@ -113,7 +113,7 @@ func (rc *resec) handleWaitForLockError() {
 }
 
 // releaseConsulLock stops consul lock handler")
-func (rc *resec) releaseConsulLock() {
+func (rc *app) releaseConsulLock() {
 	if rc.consul.lockWaitHandlerRunning {
 		log.Printf("[DEBUG] Stopping Consul Lock Error handler")
 		close(rc.consul.lockStopWaiterHandlerCh)
@@ -142,7 +142,7 @@ func (rc *resec) releaseConsulLock() {
 }
 
 // registerService registers a service in consul
-func (rc *resec) registerService() error {
+func (rc *app) registerService() error {
 	nameToRegister := rc.consul.serviceName
 
 	if nameToRegister == "" {
@@ -200,13 +200,13 @@ func (rc *resec) registerService() error {
 }
 
 // setConsulCheckStatus sets consul status check
-func (rc *resec) setConsulCheckStatus(output, status string) error {
+func (rc *app) setConsulCheckStatus(output, status string) error {
 	return rc.consul.client.Agent().UpdateTTL(rc.consul.checkID, output, status)
 }
 
-// watchConsulMasterService starts watching the service (+ tags) that represents the
+// WatchConsulMasterService starts watching the service (+ tags) that represents the
 // redis master service. All changes will be emitted to masterConsulServiceCh.
-func (rc *resec) watchConsulMasterService() error {
+func (rc *app) WatchConsulMasterService() error {
 	params := map[string]interface{}{
 		"type":        "service",
 		"service":     rc.consul.serviceNamePrefix + "-master",
@@ -242,7 +242,7 @@ func (rc *resec) watchConsulMasterService() error {
 	return nil
 }
 
-func (rc *resec) consulLockOptions() *consulapi.LockOptions {
+func (rc *app) consulLockOptions() *consulapi.LockOptions {
 	return &consulapi.LockOptions{
 		Key:              rc.consul.lockKey,
 		SessionName:      rc.consul.lockSessionName,
@@ -253,7 +253,7 @@ func (rc *resec) consulLockOptions() *consulapi.LockOptions {
 }
 
 // handleConsulError is the error handler
-func (rc *resec) handleConsulError(err error) {
+func (rc *app) handleConsulError(err error) {
 	if err == nil {
 		return
 	}

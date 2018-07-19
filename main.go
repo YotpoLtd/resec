@@ -2,20 +2,22 @@ package main
 
 import (
 	"log"
+
+	resec "github.com/YotpoLtd/resec/resec"
 )
 
 func main() {
 	log.Println("[INFO] Start!")
 
-	resec, err := setup()
+	app, err := resec.Setup()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	resec.waitForRedisToBeReady()
-	go resec.watchRedisUptime()
-	go resec.watchRedisReplicationStatus()
-	go resec.watchConsulMasterService()
+	app.WaitForRedisToBeReady()
+	go app.WatchRedisUptime()
+	go app.WatchRedisReplicationStatus()
+	go app.WatchConsulMasterService()
 
-	resec.run()
+	app.Run()
 }

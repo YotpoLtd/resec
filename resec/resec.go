@@ -1,13 +1,15 @@
-package main
+package resec
 
 import (
 	"log"
 
+	"github.com/davecgh/go-spew/spew"
+
 	consulapi "github.com/hashicorp/consul/api"
 )
 
-//start starts the procedure
-func (rc *resec) run() {
+// Run starts the procedure
+func (rc *app) Run() {
 	defer func() { rc.cleanup() }()
 
 	for {
@@ -49,6 +51,7 @@ func (rc *resec) run() {
 						status = "fail"
 					}
 
+					log.Println("setConsulCheckStatus 2")
 					if err := rc.setConsulCheckStatus(update.output, status); err != nil {
 						rc.handleConsulError(err)
 						log.Printf("[ERROR] Failed to update consul Check TTL - %s", err)
@@ -65,6 +68,7 @@ func (rc *resec) run() {
 				continue
 			}
 
+			spew.Dump(update.healthy)
 			rc.redis.healthy = update.healthy
 
 			// our state is now unhealthy, release the consul lock so someone else can
@@ -72,6 +76,11 @@ func (rc *resec) run() {
 			if !update.healthy {
 				log.Printf("[INFO] Redis status changed to NOT healthy")
 				rc.releaseConsulLock()
+				continue
+			}
+
+			if rc.redis.replicationStatus == "" {
+				log.Printf("[INFO] Replication status haven't been decided yet")
 				continue
 			}
 
@@ -131,6 +140,7 @@ func (rc *resec) run() {
 				if !rc.redis.healthy {
 					continue
 				}
+
 				if err := rc.runAsSlave(rc.lastKnownMasterInfo.address, rc.lastKnownMasterInfo.port); err != nil {
 					log.Println(err)
 					continue
@@ -173,6 +183,7 @@ func (rc *resec) run() {
 
 				if rc.redis.replicationStatus == "master" {
 					// Failing master check in consul
+					log.Println("setConsulCheckStatus 1")
 					if err := rc.setConsulCheckStatus("Lock lost or error", "fail"); err != nil {
 						rc.handleConsulError(err)
 					}
@@ -189,7 +200,7 @@ func (rc *resec) run() {
 }
 
 // parseMasterInfo parses consulServiceInfo
-func (rc *resec) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redisInfo {
+func (rc *app) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redisInfo {
 	info := redisInfo{
 		address: consulServiceInfo.Node.Address,
 		port:    consulServiceInfo.Service.Port,
@@ -204,7 +215,7 @@ func (rc *resec) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redi
 }
 
 // cleanup will clenup locks and similar internal state
-func (rc *resec) cleanup() {
+func (rc *app) cleanup() {
 	rc.releaseConsulLock()
 
 	if rc.consul.serviceID != "" {

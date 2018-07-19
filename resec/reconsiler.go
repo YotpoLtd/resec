@@ -87,44 +87,35 @@ func (r *reconsiler) Run() {
 			}
 			stateChanged = false
 
-			// do we have the initial state to start reconciliation ?
-			if r.isReadyToServe() == false {
+			// do we have the initial state to start reconciliation
+			if r.missingInitialState() {
 				r.logger.Debug("Not ready to reconsile yet, missing initial state")
 				continue
 			}
 
-			// if the consul lock is held (aka this instance should be master)
+			// if the Consul Lock is held (aka this instance should be master)
 			if r.isConsulMaster() {
-				// redis under management are not currently configured as master
-				if r.isRedisMaster() == false {
-					r.logger.Debug("We are consul master but *not* redis master")
-					r.redisConnection.runAsMaster()
-					r.consulConnection.registerService(r.redisState)
-					continue
-				}
 
-				// redis under management is configured as master
+				// redis is already configured as master, so just update the consul check
 				if r.isRedisMaster() {
 					r.logger.Debug("We are consul master *and* we run as Redis master")
 					r.consulConnection.setConsulCheckStatus(r.redisState)
 					continue
 				}
+
+				// redis is not currently configured as master
+				r.logger.Info("Configure Redis as master")
+				r.redisConnection.runAsMaster()
+				r.consulConnection.registerService(r.redisState)
+				continue
 			}
 
 			// if the consul lock is *not* held (aka this instance should be slave)
 			if r.isConsulSlave() {
 
 				// can't enslave if there are no known master redis in consul catalog
-				if r.masterElected() == false {
-					r.logger.Warn("No redis master currently elected, can't enslave to anything")
-					continue
-				}
-
-				// is slave, but not slave of current master
-				if r.isSlaveOfCurrentMaster() == false {
-					r.logger.Debug("We are *not* consul master and not enslaved to current master")
-					r.redisConnection.runAsSlave(r.consulState.masterAddr, r.consulState.masterPort)
-					r.consulConnection.registerService(r.redisState)
+				if r.noMasterElected() {
+					r.logger.Warn("Currently no master Redis is elected in Consul catalog, can't enslave local Redis")
 					continue
 				}
 
@@ -135,6 +126,12 @@ func (r *reconsiler) Run() {
 					r.consulConnection.setConsulCheckStatus(r.redisState)
 					continue
 				}
+
+				// is slave, but not slave of current master
+				r.logger.Info("Configure Redis as slave")
+				r.redisConnection.runAsSlave(r.consulState.masterAddr, r.consulState.masterPort)
+				r.consulConnection.registerService(r.redisState)
+				continue
 			}
 		}
 	}
@@ -158,26 +155,26 @@ func (r *reconsiler) isRedisMaster() bool {
 	return r.redisState.replication.role == "master"
 }
 
-// masterElected return whether any Consul elected Redis master exist
-func (r *reconsiler) masterElected() bool {
-	return r.consulState.masterAddr != "" && r.consulState.masterPort != 0
+// noMasterElected return whether any Consul elected Redis master exist
+func (r *reconsiler) noMasterElected() bool {
+	return r.consulState.masterAddr == "" && r.consulState.masterPort == 0
 }
 
-// isReadyToServe return whether we got initial state from both Consul
+// missingInitialState return whether we got initial state from both Consul
 // and Redis, so we are able to start making decissions on the state of
 // the Redis under management
-func (r *reconsiler) isReadyToServe() bool {
+func (r *reconsiler) missingInitialState() bool {
 	if r.redisState.ready == false {
 		r.logger.Warn("Redis still missing initial state")
-		return false
+		return true
 	}
 
 	if r.consulState.ready == false {
 		r.logger.Warn("Consul still missing initial state")
-		return false
+		return true
 	}
 
-	return true
+	return false
 }
 
 // isSlaveOfCurrentMaster return wheter the Redis under management currently

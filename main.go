@@ -11,6 +11,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	resec.waitForRedisToBeReady()
 
 	go resec.watchRedisReplicationStatus()
 	go resec.watchConsulMasterService()

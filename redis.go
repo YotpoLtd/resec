@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -63,4 +64,54 @@ func (rc *resec) watchRedisReplicationStatus() {
 			timer.Reset(rc.healthCheckInterval)
 		}
 	}
+}
+
+func (rc *resec) waitForRedisToBeReady() {
+	t := time.NewTicker(time.Second)
+
+	for {
+		select {
+		case <-t.C:
+			persistenceString, err := rc.redis.client.Info("persistence").Result()
+			if err != nil {
+				log.Printf("[ERROR] could not query for redis persistence info: %s", err)
+				continue
+			}
+
+			persistence := parseKeyValue(persistenceString)
+			loading, ok := persistence["loading"]
+			if !ok {
+				log.Printf("[ERROR] could not find 'persistence.loading' key")
+				continue
+			}
+
+			if loading == "1" {
+				log.Printf("[INFO] Redis is not ready yet, currently loading data from disk")
+				continue
+			}
+
+			log.Printf("[INFO] Redis is ready to serve traffic")
+			return
+		}
+	}
+}
+
+func parseKeyValue(str string) map[string]string {
+	res := make(map[string]string)
+
+	lines := strings.Split(str, "\r\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		pair := strings.Split(line, ":")
+		if len(pair) != 2 {
+			continue
+		}
+
+		res[pair[0]] = pair[1]
+	}
+
+	return res
 }

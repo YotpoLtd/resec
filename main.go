@@ -8,6 +8,7 @@ func main() {
 	log.Println("[INFO] Start!")
 
 	resec := setup()
+	resec.waitForRedisToBeReady()
 
 	go resec.watchRedisReplicationStatus()
 	go resec.watchConsulMasterService()

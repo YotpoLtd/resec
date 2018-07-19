@@ -3,6 +3,7 @@ package resec
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -74,8 +75,10 @@ func (r *reconsiler) Run() {
 			stateChanged = false
 
 			if r.isReadyToServe() == false {
+				r.logger.Debug("Not ready to serve yet")
 				continue
 			}
+			r.logger.Debug("Ready to serve now")
 
 			// have consul lock and running as master == all good
 			if r.isConsulMaster() && r.isRedisMaster() {
@@ -91,7 +94,7 @@ func (r *reconsiler) Run() {
 			}
 
 			// no consul lock, but running as maste == run as slave
-			if r.isConsulMaster() == false && r.isSlaveOfCurrentMaster() {
+			if r.isConsulMaster() == false && r.isSlaveOfCurrentMaster() == false {
 				r.logger.Debug("We are *not* consul master and not enslaved to current master")
 				r.redisConnection.runAsSlave(r.consulState.masterAddr, r.consulState.masterPort)
 			}
@@ -112,30 +115,36 @@ func (r *reconsiler) isReadyToServe() bool {
 }
 
 func (r *reconsiler) isSlaveOfCurrentMaster() bool {
+	logger := r.logger.WithField("check", "isSlaveOfCurrentMaster")
 	// if Redis thing its master, it can't be a slave of another node
 	if r.isRedisMaster() {
+		logger.Debugf("isRedismaster() == true")
 		return false
 	}
 
 	// if the replication field 'master_host' don't exist, can't be slave
 	host, ok := r.redisState.replication["master_host"]
 	if !ok {
+		logger.Debugf("missing 'master_host' in redis replication state")
 		return false
 	}
 
 	// if the replication field 'master_port' don't exist, can't be slave
 	port, ok := r.redisState.replication["master_port"]
 	if !ok {
+		logger.Debugf("missing 'master_port' in redis replication state")
 		return false
 	}
 
 	// if the host don't match consul state, it's not slave (of the right node)
 	if host != r.consulState.masterAddr {
+		logger.Debugf("'master_host=%s' do not match expected master host %s", host, r.consulState.masterAddr)
 		return false
 	}
 
 	// if the port don't match consul state, it's not slave (of the right node)
-	if port != string(r.consulState.masterPort) {
+	if port != strconv.Itoa(r.consulState.masterPort) {
+		logger.Debugf("'master_port=%d' do not match expected master host %d", port, r.consulState.masterPort)
 		return false
 	}
 

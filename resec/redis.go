@@ -35,6 +35,8 @@ type redisState struct {
 	replicationLag     time.Duration
 	err                error
 	replication        map[string]string
+	address            string
+	port               int
 }
 
 func (rc *redisConnection) emit(err error) {

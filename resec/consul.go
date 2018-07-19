@@ -30,7 +30,6 @@ type consulState struct {
 	ready      bool
 	err        error
 	lockIsHeld bool
-	role       string
 	masterAddr string
 	masterPort int
 }
@@ -51,8 +50,6 @@ type consulConfig struct {
 	lockTTL                  time.Duration
 	monitorRetries           int
 	monitorRetryTime         time.Duration
-	redisAddress             string
-	redisAnnouncePort        int
 	serviceID                string
 	serviceName              string
 	serviceNamePrefix        string
@@ -190,12 +187,12 @@ func (cc *consulConnection) registerService(redisState redisState) error {
 		nameToRegister = cc.config.serviceNamePrefix + "-" + replicationStatus
 	}
 
-	cc.config.serviceID = nameToRegister + ":" + cc.config.redisAddress
+	cc.config.serviceID = nameToRegister + ":" + strconv.Itoa(cc.config.announcePort)
 	cc.config.checkID = cc.config.serviceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
 		ID:   cc.config.serviceID,
-		Port: cc.config.redisAnnouncePort,
+		Port: cc.config.announcePort,
 		Name: nameToRegister,
 		Tags: cc.config.tags[replicationStatus],
 	}
@@ -291,7 +288,7 @@ func (cc *consulConnection) watchConsulMasterService() error {
 
 		master := masterConsulServiceStatus[0]
 
-		cc.state.masterAddr = master.Service.Address
+		cc.state.masterAddr = master.Node.Address
 		cc.state.masterPort = master.Service.Port
 		cc.emit(nil)
 	}

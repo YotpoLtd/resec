@@ -7,7 +7,9 @@ import (
 )
 
 //start starts the procedure
-func (rc *resec) start() {
+func (rc *resec) run() {
+	defer func() { rc.cleanup() }()
+
 	for {
 		select {
 		// got signal from the OS
@@ -201,8 +203,8 @@ func (rc *resec) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redi
 	return info
 }
 
-//stop stops the procedure
-func (rc *resec) stop() {
+// cleanup will clenup locks and similar internal state
+func (rc *resec) cleanup() {
 	rc.releaseConsulLock()
 
 	if rc.consul.serviceID != "" {

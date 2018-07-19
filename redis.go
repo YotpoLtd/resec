@@ -64,6 +64,8 @@ func (rc *resec) watchRedisReplicationStatus() {
 // watchRedisUptime checks redis server uptime
 func (rc *resec) watchRedisUptime() {
 	lastUptime := 0
+	connectionErrors := 0
+	allowedConnectionErrors := 3
 
 	ticker := time.NewTicker(rc.healthCheckInterval)
 	for ; true; <-ticker.C {
@@ -71,9 +73,17 @@ func (rc *resec) watchRedisUptime() {
 
 		result, err := rc.redis.client.Info("server").Result()
 		if err != nil {
-			log.Printf("[ERROR] Could not query for server info: %s", err)
+			log.Printf("[WARN] Could not query for server info: %s", err)
+			connectionErrors++
+
+			if connectionErrors > allowedConnectionErrors {
+				log.Printf("[ERROR] Too many connection errors, shutting down")
+				rc.stopCh <- true
+			}
+
 			continue
 		}
+		connectionErrors = 0
 
 		parsed := parseKeyValue(result)
 		uptimeString, ok := parsed["uptime_in_seconds"]
@@ -117,7 +127,7 @@ func (rc *resec) waitForRedisToBeReady() {
 				continue
 			}
 
-			if loading == "1" {
+			if loading != "0" {
 				log.Printf("[INFO] Redis is not ready yet, currently loading data from disk")
 				continue
 			}

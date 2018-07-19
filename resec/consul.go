@@ -320,7 +320,7 @@ func (cc *consulConnection) handleConsulError(err error) {
 		cc.logger.Error("[ERROR] Consul Agent is down")
 	}
 
-	cc.logger.Error("Consul error: %v", err)
+	cc.logger.Errorf("Consul error: %v", err)
 }
 
 func (cc *consulConnection) loop() {

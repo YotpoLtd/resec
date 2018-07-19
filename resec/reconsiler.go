@@ -74,29 +74,36 @@ func (r *reconsiler) Run() {
 			}
 			stateChanged = false
 
+			// do we have the initial state to start reconciliation ?
 			if r.isReadyToServe() == false {
-				r.logger.Debug("Not ready to serve yet")
+				r.logger.Debug("Not ready to reconsile yet, missing initial state")
 				continue
 			}
-			r.logger.Debug("Ready to serve now")
 
-			// have consul lock and running as master == all good
+			// is master, but are not master
+			if r.isConsulMaster() && r.isRedisMaster() == false {
+				r.logger.Debug("We are consul master but *not* redis master")
+				r.redisConnection.runAsMaster()
+			}
+
+			// is master, and is in fact master
 			if r.isConsulMaster() && r.isRedisMaster() {
 				r.logger.Debug("We are consul master *and* we run as Redis master")
 				r.consulConnection.registerService(r.redisState)
 				continue
 			}
 
-			// have consul lock, but not running as master == run as master
-			if r.isConsulMaster() && r.isRedisMaster() == false {
-				r.logger.Debug("We are consul master but *not* redis master")
-				r.redisConnection.runAsMaster()
-			}
-
-			// no consul lock, but running as maste == run as slave
-			if r.isConsulMaster() == false && r.isSlaveOfCurrentMaster() == false {
+			// is slave, but not slave of current master
+			if r.isConsulSlave() && r.isSlaveOfCurrentMaster() == false {
 				r.logger.Debug("We are *not* consul master and not enslaved to current master")
 				r.redisConnection.runAsSlave(r.consulState.masterAddr, r.consulState.masterPort)
+			}
+
+			// is slave, and following the current master
+			// TODO(jippi): consider replication lag
+			if r.isConsulSlave() && r.isSlaveOfCurrentMaster() {
+				r.logger.Debug("We are *not* consul master but enslaved to current master")
+				r.consulConnection.registerService(r.redisState)
 			}
 		}
 	}
@@ -104,6 +111,10 @@ func (r *reconsiler) Run() {
 
 func (r *reconsiler) isConsulMaster() bool {
 	return r.consulState.lockIsHeld
+}
+
+func (r *reconsiler) isConsulSlave() bool {
+	return r.consulState.lockIsHeld == false
 }
 
 func (r *reconsiler) isRedisMaster() bool {

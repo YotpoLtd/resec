@@ -1,3 +1,23 @@
+## 0.4.3 (July 15, 2018)
+
+FIXES:
+
+  * Allow same Master and Slave tags when using CONSUL_SERVICE_PREFIX
+
+
+## 0.4.2 (July 15, 2018)
+
+FEATURES:
+
+  * Verbose Health Check names giving the option to distinguish checks of multiple Resec instances running on the same node 
+
+## 0.4.1 (May 16, 2018)
+
+FEATURES:
+
+  * Prevent master and slave tag having index 0 identical when using CONSUL_SERVICE_NAME
+  * Test!
+
 ## 0.4.0 (April 26, 2018)
 
 FEATURES:

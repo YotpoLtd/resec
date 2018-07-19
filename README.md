@@ -40,22 +40,22 @@ There are 2 options to work with services:
 
 ### Environment variables
 
-Environment Variables |  Default       | Description                                       
-----------------------| ---------------| ------------------------------------------------- 
+Environment Variables |  Default       | Description
+----------------------| ---------------| -------------------------------------------------
 ANNOUNCE_ADDR         |                | IP:Port of Redis to be announced, by default service will be registered wi
 CONSUL_SERVICE_NAME   |                | Consul service name for tag based service discovery
-CONSUL_SERVICE_PREFIX | redis          | Name Prefix, will be followed by "-(master/slave)", ignored if CONSUL_SERVICE_NAME is used     
+CONSUL_SERVICE_PREFIX | redis          | Name Prefix, will be followed by "-(master/slave)", ignored if CONSUL_SERVICE_NAME is used
 CONSUL_LOCK_KEY       | resec/.lock    | KV lock location, should be overriden if multiple instances running in the same consul DC
 CONSUL_LOCK_SESSION_NAME       | resec | Lock session Name to distinguish multiple resec masters on one host
 CONSUL_LOCK_MONITOR_RETRIES | 3        | Number of retries of lock receives 500 Error from Consul
 CONSUL_LOCK_MONITOR_RETRY_INTERVAL | 1s | Retry interval if lock receives 500 Error from Consul
 CONSUL_DEREGISTER_SERVICE_AFTER | 72h  |
 CONSUL_LOCK_TTL       | 15s            |
-MASTER_TAGS           |                | Comma separated list of tags to be added to master instance
-SLAVE_TAGS            |                | Comma separated list of tags to be added to slave instance
-HEALTHCHECK_INTERVAL  | 5s             |                                                   
-HEALTHCHECK_TIMEOUT   | 2s             |                                                   
-REDIS_ADDR            | 127.0.0.1:6379 |                                                   
+MASTER_TAGS           |                | Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and *must* be different from index 0 in `SLAVE_TAGS`.
+SLAVE_TAGS            |                | Comma separated list of tags to be added to slave instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and *must* be different from index 0 in `MASTER_TAGS`.
+HEALTHCHECK_INTERVAL  | 5s             |
+HEALTHCHECK_TIMEOUT   | 2s             |
+REDIS_ADDR            | 127.0.0.1:6379 |
 REDIS_PASSWORD        |                |
 LOG_LEVEL             | INFO           | Options are "DEBUG", "INFO", "WARN", "ERROR"
 
@@ -127,13 +127,13 @@ EORC
         }
       }
     }
-    
+
     task "resec" {
       driver = "docker"
       config {
         image = "yotpo/resec"
       }
-      
+
       env {
         CONSUL_HTTP_ADDR = "http://${attr.unique.network.ip-address}:8500"
         REDIS_ADDR = "${NOMAD_ADDR_redis_db}"
@@ -151,7 +151,7 @@ EORC
 }
 ```
 
-* with docker-compose.yml:  
+* with docker-compose.yml:
 
 ```yaml
 resec:

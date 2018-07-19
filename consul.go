@@ -173,8 +173,14 @@ func (rc *resec) registerService() error {
 	log.Printf("[INFO] Registered service [%s](id [%s]) with address [%s:%d]", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
 	log.Printf("[DEBUG] Adding TTL Check with id %s to service %s with id %s", rc.consul.checkID, nameToRegister, serviceInfo.ID)
 
+	checkNameToRegister := rc.consul.serviceName
+
+	if checkNameToRegister == "" {
+		checkNameToRegister = rc.consul.serviceNamePrefix
+	}
+
 	check := &consulapi.AgentCheckRegistration{
-		Name:      rc.redis.replicationStatus + " replication status",
+		Name:      "Resec: " + checkNameToRegister + " " + rc.redis.replicationStatus + " replication status",
 		ID:        rc.consul.checkID,
 		ServiceID: rc.consul.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{

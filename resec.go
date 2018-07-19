@@ -2,23 +2,22 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	consulapi "github.com/hashicorp/consul/api"
 )
 
 //start starts the procedure
 func (rc *resec) start() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
-
 	for {
 		select {
 		// got signal from the OS
-		case <-c:
+		case <-rc.sigCh:
 			log.Printf("[INFO] Caught signal, stopping worker loop")
+			return
+
+		// got internal request to shut down
+		case <-rc.stopCh:
+			log.Printf("[INFO] Shutdown requested, stopping worker loop")
 			return
 
 		// got an update on redis replication status

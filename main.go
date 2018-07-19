@@ -13,6 +13,7 @@ func main() {
 	}
 
 	resec.waitForRedisToBeReady()
+	go resec.watchRedisUptime()
 	go resec.watchRedisReplicationStatus()
 	go resec.watchConsulMasterService()
 

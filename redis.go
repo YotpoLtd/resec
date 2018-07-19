@@ -43,26 +43,58 @@ func (rc *resec) runAsMaster() error {
 
 // watchRedisReplicationStatus checks redis replication status
 func (rc *resec) watchRedisReplicationStatus() {
-	timer := time.NewTimer(rc.healthCheckInterval)
+	ticker := time.NewTicker(rc.healthCheckInterval)
 
-	for {
-		select {
-		case <-timer.C:
-			log.Println("[DEBUG] Checking redis replication status")
+	for ; true; <-ticker.C {
+		log.Println("[DEBUG] Checking redis replication status")
 
-			result, err := rc.redis.client.Info("replication").Result()
-			if err != nil {
-				log.Printf("[ERROR] Can't connect to redis running on %s", rc.redis.address)
-				result = fmt.Sprintf("Can't connect to redis running on %s", rc.redis.address)
-			}
-
-			rc.redisReplicationCh <- &redisHealth{
-				output:  result,
-				healthy: err == nil,
-			}
-
-			timer.Reset(rc.healthCheckInterval)
+		result, err := rc.redis.client.Info("replication").Result()
+		if err != nil {
+			log.Printf("[ERROR] Can't connect to redis running on %s", rc.redis.address)
+			result = fmt.Sprintf("Can't connect to redis running on %s", rc.redis.address)
 		}
+
+		rc.redisReplicationCh <- &redisHealth{
+			output:  result,
+			healthy: err == nil,
+		}
+	}
+}
+
+// watchRedisUptime checks redis server uptime
+func (rc *resec) watchRedisUptime() {
+	lastUptime := 0
+
+	ticker := time.NewTicker(rc.healthCheckInterval)
+	for ; true; <-ticker.C {
+		log.Println("[DEBUG] Checking redis server info")
+
+		result, err := rc.redis.client.Info("server").Result()
+		if err != nil {
+			log.Printf("[ERROR] Could not query for server info: %s", err)
+			continue
+		}
+
+		parsed := parseKeyValue(result)
+		uptimeString, ok := parsed["uptime_in_seconds"]
+		if !ok {
+			log.Printf("[ERROR] Could not find 'uptime_in_seconds' in server info respone")
+			continue
+		}
+
+		uptime, err := strconv.Atoi(uptimeString)
+		if err != nil {
+			log.Printf("[ERROR] Could not parse 'uptime_in_seconds' to integer")
+			continue
+		}
+
+		if uptime < lastUptime {
+			log.Printf("[ERROR] Current uptime (%d) is less than previous (%d) - Redis likely restarted - stopping resec", uptime, lastUptime)
+			rc.stopCh <- true
+			continue
+		}
+
+		lastUptime = uptime
 	}
 }
 

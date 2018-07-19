@@ -2,12 +2,6 @@
 
 
 [[projects]]
-  name = "github.com/davecgh/go-spew"
-  packages = ["spew"]
-  revision = "346938d642f2ec3594ed81d874461961cd0faa76"
-  version = "v1.1.0"
-
-[[projects]]
   name = "github.com/go-redis/redis"
   packages = [
     ".",
@@ -44,12 +38,6 @@
   revision = "6bb64b370b90e7ef1fa532be9e591a81c3493e00"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/hashicorp/logutils"
-  packages = ["."]
-  revision = "0dc08b1671f34c4250ce212759ebd880f743d883"
-
-[[projects]]
   name = "github.com/hashicorp/serf"
   packages = ["coordinate"]
   revision = "d6574a5bb1226678d7010325fb6c985db20ee458"
@@ -68,20 +56,29 @@
   revision = "00c29f56e2386353d58c599509e8dc3801b0d716"
 
 [[projects]]
-  name = "github.com/pmezard/go-difflib"
-  packages = ["difflib"]
-  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
-  version = "v1.0.0"
+  name = "github.com/sirupsen/logrus"
+  packages = ["."]
+  revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
+  version = "v1.0.5"
 
 [[projects]]
-  name = "github.com/stretchr/testify"
-  packages = ["assert"]
-  revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
-  version = "v1.2.1"
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = ["ssh/terminal"]
+  revision = "a2144134853fc9a27a7b1e3eb4f19f1a76df13c9"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = [
+    "unix",
+    "windows"
+  ]
+  revision = "ac767d655b305d4e9612f5f6e33120b9176c4ad4"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b102c4ba7c2e7a16caf7335e20a90b4b66800f299c14e0b273d44f8b331c9207"
+  inputs-digest = "d146684146cb7dc6c9edf8993233d08dbce3fee5d891f9fe224ffac949085aaf"
   solver-name = "gps-cdcl"
   solver-version = 1

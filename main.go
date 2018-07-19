@@ -14,10 +14,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	app.WaitForRedisToBeReady()
-	go app.WatchRedisUptime()
-	go app.WatchRedisReplicationStatus()
-	go app.WatchConsulMasterService()
-
 	app.Run()
 }

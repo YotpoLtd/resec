@@ -12,12 +12,12 @@ import (
 
 // setup returns the default configuration for the ReSeC
 func setup(c *cli.Context) (*reconciler, error) {
-	redisConnection, err := redis.NewRedisConnection(c)
+	redisConnection, err := redis.NewConnection(c)
 	if err != nil {
 		return nil, err
 	}
 
-	consulConnection, err := consul.NewConsulConnection(c, redisConnection.Config())
+	consulConnection, err := consul.NewConnection(c, redisConnection.Config())
 	if err != nil {
 		return nil, err
 	}

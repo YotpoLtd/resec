@@ -12,27 +12,13 @@ import (
 	"gopkg.in/urfave/cli.v1"
 )
 
-type connection struct {
-	logger    *log.Entry       // logging specificall for Redis
-	client    *redis.Client    // redis client
-	config    *RedisConfig     // redis config
-	state     *state.Redis     // redis state
-	StateCh   chan state.Redis // redis state channel to publish updates to the reconciler
-	CommandCh chan Command
-	stopCh    chan interface{}
-}
-
-type RedisConfig struct {
-	Address string // address (IP+Port) used to talk to Redis
-}
-
 // emit will send a state update to the reconciler
-func (rc *connection) emit() {
+func (rc *Connection) emit() {
 	rc.StateCh <- *rc.state
 }
 
 // runAsMaster sets the instance to be the master
-func (rc *connection) runAsMaster() error {
+func (rc *Connection) runAsMaster() error {
 	if err := rc.client.SlaveOf("no", "one").Err(); err != nil {
 		return err
 	}
@@ -42,7 +28,7 @@ func (rc *connection) runAsMaster() error {
 }
 
 // runAsSlave sets the instance to be a slave for the master
-func (rc *connection) runAsSlave(masterAddress string, masterPort int) error {
+func (rc *Connection) runAsSlave(masterAddress string, masterPort int) error {
 	rc.logger.Infof("Enslaving redis %s to be slave of %s:%d", rc.config.Address, masterAddress, masterPort)
 
 	if err := rc.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
@@ -53,16 +39,16 @@ func (rc *connection) runAsSlave(masterAddress string, masterPort int) error {
 	return nil
 }
 
-func (rc *connection) cleanup() {
+func (rc *Connection) cleanup() {
 	close(rc.stopCh)
 }
 
-func (rc *connection) start() {
+func (rc *Connection) start() {
 	go rc.watchReplicationStatus()
 	rc.waitForRedisToBeReady()
 }
 
-func (rc *connection) CommandRunner() {
+func (rc *Connection) CommandRunner() {
 	for {
 		select {
 
@@ -88,7 +74,7 @@ func (rc *connection) CommandRunner() {
 }
 
 // watchReplicationStatus checks redis replication status
-func (rc *connection) watchReplicationStatus() {
+func (rc *Connection) watchReplicationStatus() {
 	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
@@ -142,7 +128,7 @@ func (rc *connection) watchReplicationStatus() {
 
 // waitForRedisToBeReady will check if we got the initial redis state we need
 // for the reconciler to do its job right out of the box
-func (rc *connection) waitForRedisToBeReady() {
+func (rc *Connection) waitForRedisToBeReady() {
 	t := time.NewTicker(500 * time.Millisecond)
 
 	for ; true; <-t.C {
@@ -156,7 +142,7 @@ func (rc *connection) waitForRedisToBeReady() {
 	}
 }
 
-func (rc *connection) parseKeyValue(str string) map[string]string {
+func (rc *Connection) parseKeyValue(str string) map[string]string {
 	res := make(map[string]string)
 
 	lines := strings.Split(str, "\r\n")
@@ -176,16 +162,16 @@ func (rc *connection) parseKeyValue(str string) map[string]string {
 	return res
 }
 
-func (rc *connection) Config() RedisConfig {
+func (rc *Connection) Config() RedisConfig {
 	return *rc.config
 }
 
-func NewRedisConnection(c *cli.Context) (*connection, error) {
+func NewConnection(c *cli.Context) (*Connection, error) {
 	redisConfig := &RedisConfig{
 		Address: c.String("redis-addr"),
 	}
 
-	instance := &connection{
+	instance := &Connection{
 		client: redis.NewClient(&redis.Options{
 			Addr:        redisConfig.Address,
 			DialTimeout: c.Duration("healthcheck-timeout"),

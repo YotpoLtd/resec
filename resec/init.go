@@ -29,7 +29,7 @@ const (
 )
 
 // setup returns the default configuration for the ReSeC
-func Setup() (*reconsiler, error) {
+func Setup() (*reconciler, error) {
 	log.SetLevel(log.DebugLevel)
 
 	config, err := newConfig()
@@ -47,7 +47,7 @@ func Setup() (*reconsiler, error) {
 		log.Fatal(err)
 	}
 
-	reconsiler := &reconsiler{}
+	reconsiler := &reconciler{}
 	reconsiler.consulConnection = consulConnection
 	reconsiler.redisConnection = redisConnection
 

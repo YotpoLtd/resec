@@ -16,7 +16,7 @@ type redisConnection struct {
 	client  *redis.Client   // redis client
 	config  *redisConfig    // redis config
 	state   *redisState     // redis state
-	stateCh chan redisState // redis state channel to publish updates to the reconsiler
+	stateCh chan redisState // redis state channel to publish updates to the reconciler
 }
 
 type redisConfig struct {
@@ -27,7 +27,7 @@ type redisConfig struct {
 // Redis state represent the full state of the connection with Redis
 type redisState struct {
 	connected         bool                  // are we able to connect to Redis?
-	ready             bool                  // are we ready to provide state for the reconsiler?
+	ready             bool                  // are we ready to provide state for the reconciler?
 	replication       redisReplicationState // current replication data
 	replicationString string                // raw replication info
 }
@@ -56,7 +56,7 @@ func (r *redisReplicationState) changed(new redisReplicationState) bool {
 	return false
 }
 
-// emit will send a state update to the reconsiler
+// emit will send a state update to the reconciler
 func (rc *redisConnection) emit() {
 	rc.stateCh <- *rc.state
 }
@@ -187,7 +187,7 @@ func (rc *redisConnection) watchServerStatus() {
 }
 
 // waitForRedisToBeReady will check if we got the initial redis state we need
-// for the reconsiler to do its job right out of the box
+// for the reconciler to do its job right out of the box
 func (rc *redisConnection) waitForRedisToBeReady() {
 	t := time.NewTicker(time.Second)
 

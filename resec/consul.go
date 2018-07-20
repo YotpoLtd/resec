@@ -21,12 +21,12 @@ type consulConnection struct {
 	lockErrorCh  <-chan struct{}   // lock error channel used by Consul SDK to notify about errors related to the lock
 	logger       *log.Entry        // logger for the consul connection struct
 	masterCh     chan interface{}  // notification channel used to notify the Consul Lock go-routing that the master service changed
-	state        *consulState      // state used by the reconsiler
-	stateCh      chan consulState  // state channel used to notify the reconsiler of changes
+	state        *consulState      // state used by the reconciler
+	stateCh      chan consulState  // state channel used to notify the reconciler of changes
 	stopCh       chan interface{}  // internal channel used to stop all go-routines when gracefully shutting down
 }
 
-// Consul state used by the reconsiler to decide what actions to take
+// Consul state used by the reconciler to decide what actions to take
 type consulState struct {
 	ready      bool
 	healthy    bool
@@ -56,12 +56,12 @@ type consulConfig struct {
 	serviceTTL               time.Duration
 }
 
-// emit will emit a consul state change to the reconsiler
+// emit will emit a consul state change to the reconciler
 func (cc *consulConnection) emit() {
 	cc.stateCh <- *cc.state
 }
 
-// cleanup will do cleanup tasks when the reconsiler is shutting down
+// cleanup will do cleanup tasks when the reconciler is shutting down
 func (cc *consulConnection) cleanup() {
 	cc.logger.Debug("Releasing lock")
 	cc.releaseConsulLock()
@@ -171,7 +171,7 @@ func (cc *consulConnection) acquireConsulLeadership() {
 	// Wait for changes to Consul Lock
 	for {
 		select {
-		// Global stop of all go-routines, reconsiler is shutting down
+		// Global stop of all go-routines, reconciler is shutting down
 		case <-cc.stopCh:
 			return
 

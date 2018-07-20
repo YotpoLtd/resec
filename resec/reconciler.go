@@ -10,7 +10,7 @@ import (
 
 // Reconsiler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
-type reconsiler struct {
+type reconciler struct {
 	logger           *log.Entry
 	consulConnection *consulConnection // reference to the consul connection
 	consulUpdateCh   chan consulState  // get updates from Consul manager
@@ -24,7 +24,7 @@ type reconsiler struct {
 }
 
 // Run starts the procedure
-func (r *reconsiler) Run() {
+func (r *reconciler) Run() {
 	r.logger = log.WithField("system", "reconsiler")
 
 	r.redisUpdateCh = r.redisConnection.stateCh
@@ -123,7 +123,7 @@ func (r *reconsiler) Run() {
 	}
 }
 
-func (r *reconsiler) stateReader() {
+func (r *reconciler) stateReader() {
 	// how long to wait between forced renconsile (e.g. to keep TTL happy)
 	t := 5 * time.Second
 	f := time.NewTimer(t)
@@ -167,41 +167,41 @@ func (r *reconsiler) stateReader() {
 	}
 }
 
-func (r *reconsiler) isConsulUnhealhy() bool {
+func (r *reconciler) isConsulUnhealhy() bool {
 	return r.consulState.healthy == false
 }
 
-func (r *reconsiler) isRedisUnhealthy() bool {
+func (r *reconciler) isRedisUnhealthy() bool {
 	return r.redisState.connected == false
 }
 
 // isConsulMaster return whether the Consul lock is held or not
 // if it's held, the Redis under management should become master
-func (r *reconsiler) isConsulMaster() bool {
+func (r *reconciler) isConsulMaster() bool {
 	return r.consulState.lockIsHeld
 }
 
 // isConsulSlave return whether the Consul lock is held or not
 // if its *not* hold, the Reids under management should become slave
-func (r *reconsiler) isConsulSlave() bool {
+func (r *reconciler) isConsulSlave() bool {
 	return r.consulState.lockIsHeld == false
 }
 
 // isRedisMaster return whether the Redis under management currently
 // see itself as a master instance or not
-func (r *reconsiler) isRedisMaster() bool {
+func (r *reconciler) isRedisMaster() bool {
 	return r.redisState.replication.role == "master"
 }
 
 // noMasterElected return whether any Consul elected Redis master exist
-func (r *reconsiler) noMasterElected() bool {
+func (r *reconciler) noMasterElected() bool {
 	return r.consulState.masterAddr == "" && r.consulState.masterPort == 0
 }
 
 // missingInitialState return whether we got initial state from both Consul
 // and Redis, so we are able to start making decissions on the state of
 // the Redis under management
-func (r *reconsiler) missingInitialState() bool {
+func (r *reconciler) missingInitialState() bool {
 	if r.redisState.ready == false {
 		r.logger.Warn("Redis still missing initial state")
 		return true
@@ -217,7 +217,7 @@ func (r *reconsiler) missingInitialState() bool {
 
 // isSlaveOfCurrentMaster return wheter the Redis under management currently
 // are configured to be slave of the currently elected master Redis
-func (r *reconsiler) isSlaveOfCurrentMaster() bool {
+func (r *reconciler) isSlaveOfCurrentMaster() bool {
 	logger := r.logger.WithField("check", "isSlaveOfCurrentMaster")
 	// if Redis thing its master, it can't be a slave of another node
 	if r.isRedisMaster() {
@@ -242,7 +242,7 @@ func (r *reconsiler) isSlaveOfCurrentMaster() bool {
 }
 
 // cleanup will ensure consul and redis will gracefully shutdown
-func (r *reconsiler) cleanup() {
+func (r *reconciler) cleanup() {
 	r.logger.Debugf("Consul Cleanup started ")
 	r.consulConnection.cleanup()
 

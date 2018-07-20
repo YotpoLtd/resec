@@ -19,17 +19,18 @@ var (
 // reconciler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
 type Reconciler struct {
-	consul            state.Consul          // Latest (cached) Consul state
-	consulCommandCh   chan<- consul.Command // Write-only channel to request Consul actions to be taken
-	consulStateCh     <-chan state.Consul   // Read-only channel to get Consul state updates
-	logger            *log.Entry            // reconciler logger
-	reconcileInterval time.Duration         // How often we should force reconcile
-	redis             state.Redis           // Latest (cached) Redis state
-	redisCommandCh    chan<- redis.Command  // Write-only channel to request Redis actions to be taken
-	redisStateCh      <-chan state.Redis    // Read-only channel to get Redis state updates
-	reconcile         bool                  // Used to track if any state has been updated
-	signalCh          chan os.Signal        // signal channel (OS / signal shutdown)
-	stopCh            chan interface{}      // stop channel (internal shutdown)
+	consul                 state.Consul          // Latest (cached) Consul state
+	consulCommandCh        chan<- consul.Command // Write-only channel to request Consul actions to be taken
+	consulStateCh          <-chan state.Consul   // Read-only channel to get Consul state updates
+	logger                 *log.Entry            // reconciler logger
+	forceReconcileInterval time.Duration         // How often we should force reconcile
+	reconcileInterval      time.Duration         // how often we should evaluate our state
+	redis                  state.Redis           // Latest (cached) Redis state
+	redisCommandCh         chan<- redis.Command  // Write-only channel to request Redis actions to be taken
+	redisStateCh           <-chan state.Redis    // Read-only channel to get Redis state updates
+	reconcile              bool                  // Used to track if any state has been updated
+	signalCh               chan os.Signal        // signal channel (OS / signal shutdown)
+	stopCh                 chan interface{}      // stop channel (internal shutdown)s
 }
 
 // sendRedisCommand will build and send a Redis command
@@ -52,7 +53,7 @@ func (r *Reconciler) Run() {
 	r.sendRedisCommand(redis.StartCommand)
 
 	// how frequenty to reconcile when redis/consul state changes
-	t := time.NewTicker(100 * time.Millisecond)
+	t := time.NewTicker(r.reconcileInterval)
 
 	for {
 		select {
@@ -142,7 +143,7 @@ func (r *Reconciler) Run() {
 
 func (r *Reconciler) stateReader() {
 	// how long to wait between forced renconcile (e.g. to keep TTL happy)
-	f := time.NewTimer(r.reconcileInterval)
+	f := time.NewTimer(r.forceReconcileInterval)
 
 	for {
 		select {
@@ -154,7 +155,7 @@ func (r *Reconciler) stateReader() {
 		// we fake state change to ensure we reconcile periodically
 		case <-f.C:
 			r.reconcile = true
-			f.Reset(r.reconcileInterval)
+			f.Reset(r.forceReconcileInterval)
 
 		// New redis state change
 		case redis, ok := <-r.redisStateCh:
@@ -166,7 +167,7 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Redis state")
 			r.redis = redis
 			r.reconcile = true
-			f.Reset(r.reconcileInterval)
+			f.Reset(r.forceReconcileInterval)
 
 		// New Consul state change
 		case consul, ok := <-r.consulStateCh:
@@ -178,7 +179,7 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Consul state")
 			r.consul = consul
 			r.reconcile = true
-			f.Reset(r.reconcileInterval)
+			f.Reset(r.forceReconcileInterval)
 		}
 	}
 }

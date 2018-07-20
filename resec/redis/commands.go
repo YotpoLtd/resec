@@ -16,6 +16,10 @@ type Command struct {
 	consulState state.Consul
 }
 
+func (c *Command) Name() string {
+	return string(c.name)
+}
+
 func NewCommand(cmd CommandName, consulState state.Consul) Command {
 	return Command{
 		name:        cmd,

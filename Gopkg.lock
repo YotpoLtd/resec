@@ -44,6 +44,12 @@
   version = "v0.8.1"
 
 [[projects]]
+  name = "github.com/jpillora/backoff"
+  packages = ["."]
+  revision = "8eab2debe79d12b7bd3d10653910df25fa9552ba"
+  version = "1.0.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/mitchellh/go-homedir"
   packages = ["."]
@@ -79,6 +85,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d146684146cb7dc6c9edf8993233d08dbce3fee5d891f9fe224ffac949085aaf"
+  inputs-digest = "ca836b1a45f8a41338416f8a41210723e26a9adec8f6e584c23d6a1a366f05ad"
   solver-name = "gps-cdcl"
   solver-version = 1

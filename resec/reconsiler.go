@@ -20,6 +20,7 @@ type reconsiler struct {
 	redisState       redisState        // last seen redis state
 	sigCh            chan os.Signal    // signal channel (OS / signal shutdown)
 	stopCh           chan interface{}  // stop channel (internal shutdown)
+	stateChanged     bool
 }
 
 // Run starts the procedure
@@ -29,17 +30,12 @@ func (r *reconsiler) Run() {
 	r.redisUpdateCh = r.redisConnection.stateCh
 	r.consulUpdateCh = r.consulConnection.stateCh
 
+	go r.stateReader()
 	go r.redisConnection.start()
 	go r.consulConnection.start()
 
 	// how frequenty to reconsile when redis/consul state changes
 	t := time.NewTicker(100 * time.Millisecond)
-
-	// how long to wait between forced renconsile (e.g. to keep TTL happy)
-	f := time.NewTicker(5 * time.Second)
-
-	// have any state changed since last run?
-	stateChanged := false
 
 	for {
 		select {
@@ -51,45 +47,32 @@ func (r *reconsiler) Run() {
 
 		// stop the infinite loop
 		case <-r.stopCh:
-			r.logger.Info("Shutdown requested, stopping worker loop")
+			r.logger.Info("Shutdown requested, stopping reconsiler loop")
 			return
-
-		// New redis state change
-		case redis, ok := <-r.redisUpdateCh:
-			if !ok {
-				r.logger.Error("Redis replication channel was closed, shutting down")
-				return
-			}
-
-			r.logger.Debug("New Redis state")
-			r.redisState = redis
-			stateChanged = true
-
-		// New Consul state change
-		case consul, ok := <-r.consulUpdateCh:
-			if !ok {
-				r.logger.Error("Consul master service channel was closed, shutting down")
-				return
-			}
-
-			r.logger.Debug("New Consul state")
-			r.consulState = consul
-			stateChanged = true
-
-		// we fake state change to ensure we reconsile periodically
-		case <-f.C:
-			stateChanged = true
 
 		case <-t.C:
 			// No new state since last, doing nothing
-			if stateChanged == false {
+			if r.stateChanged == false {
 				continue
 			}
-			stateChanged = false
+			r.stateChanged = false
+			r.logger.Debugf("Reconsile changes")
 
 			// do we have the initial state to start reconciliation
 			if r.missingInitialState() {
 				r.logger.Debug("Not ready to reconsile yet, missing initial state")
+				continue
+			}
+
+			if r.isConsulUnhealhy() {
+				r.logger.Debugf("Can not reconsile, services are not healthy")
+				continue
+			}
+
+			if r.isRedisUnhealthy() {
+				r.logger.Debugf("Redis is not healthy, deregister consul service and don't change anything")
+				r.consulConnection.releaseConsulLock()
+				r.consulConnection.deregisterService()
 				continue
 			}
 
@@ -122,19 +105,71 @@ func (r *reconsiler) Run() {
 				// is slave, and following the current master
 				// TODO(jippi): consider replication lag
 				if r.isSlaveOfCurrentMaster() {
-					r.logger.Debug("We are *not* consul master but enslaved to current master")
+					r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
 					r.consulConnection.setConsulCheckStatus(r.redisState)
 					continue
 				}
 
 				// is slave, but not slave of current master
-				r.logger.Info("Configure Redis as slave")
+				r.logger.Info("Reconfigure Redis as slave")
 				r.redisConnection.runAsSlave(r.consulState.masterAddr, r.consulState.masterPort)
 				r.consulConnection.registerService(r.redisState)
 				continue
 			}
 		}
 	}
+}
+
+func (r *reconsiler) stateReader() {
+	// how long to wait between forced renconsile (e.g. to keep TTL happy)
+	t := 5 * time.Second
+	f := time.NewTimer(t)
+
+	for {
+		select {
+		// stop the infinite loop
+		case <-r.stopCh:
+			r.logger.Info("Shutdown requested, stopping state loop")
+			return
+
+		// we fake state change to ensure we reconsile periodically
+		case <-f.C:
+			r.stateChanged = true
+			f.Reset(t)
+
+		// New redis state change
+		case redis, ok := <-r.redisUpdateCh:
+			if !ok {
+				r.logger.Error("Redis replication channel was closed, shutting down")
+				return
+			}
+
+			r.logger.Debug("New Redis state")
+			r.redisState = redis
+			r.stateChanged = true
+			f.Reset(t)
+
+		// New Consul state change
+		case consul, ok := <-r.consulUpdateCh:
+			if !ok {
+				r.logger.Error("Consul master service channel was closed, shutting down")
+				return
+			}
+
+			r.logger.Debug("New Consul state")
+			r.consulState = consul
+			r.stateChanged = true
+			f.Reset(t)
+		}
+	}
+}
+
+func (r *reconsiler) isConsulUnhealhy() bool {
+	return r.consulState.healthy == false
+}
+
+func (r *reconsiler) isRedisUnhealthy() bool {
+	return r.redisState.connected == false
 }
 
 // isConsulMaster return whether the Consul lock is held or not

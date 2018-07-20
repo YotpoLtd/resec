@@ -124,11 +124,22 @@ func (rc *redisConnection) watchReplicationStatus() {
 	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
-		rc.logger.Debug("Checking redis replication status")
+		// rc.logger.Debug("Checking redis replication status")
 
 		result, err := rc.client.Info("replication").Result()
 		if err != nil {
 			err = fmt.Errorf("Can't connect to redis running on %s", rc.config.address)
+
+			rc.state.connected = false
+			rc.emit(err)
+
+			rc.logger.Error(err)
+			continue
+		}
+
+		if rc.state.connected == false {
+			rc.state.connected = true
+			rc.emit(nil)
 		}
 
 		kvPair := parseKeyValue(result)
@@ -155,7 +166,7 @@ func (rc *redisConnection) watchReplicationStatus() {
 		}
 
 		if replicationState.changed(rc.state.replication) == false {
-			rc.logger.Debugf("Redis replication state did not change")
+			// rc.logger.Debugf("Redis replication state did not change")
 			continue
 		}
 

@@ -12,6 +12,15 @@ import (
 	"gopkg.in/urfave/cli.v1"
 )
 
+const (
+	startConsulCommand       = consulCommandType("start")
+	stopConsulCommand        = consulCommandType("stop")
+	registerServiceCommand   = consulCommandType("register_service")
+	deregisterServiceCommand = consulCommandType("deregister_service")
+	updateServiceCommand     = consulCommandType("update_service")
+	releaseLockCommand       = consulCommandType("release_lock")
+)
+
 type consulConnection struct {
 	backoff      *backoff.Backoff  // exponential backoff helper
 	client       *consulapi.Client // consul API client
@@ -24,6 +33,7 @@ type consulConnection struct {
 	state        *consulState      // state used by the reconciler
 	stateCh      chan consulState  // state channel used to notify the reconciler of changes
 	stopCh       chan interface{}  // internal channel used to stop all go-routines when gracefully shutting down
+	commandCh    chan consulCommand
 }
 
 // Consul state used by the reconciler to decide what actions to take
@@ -56,6 +66,13 @@ type consulConfig struct {
 	serviceTTL               time.Duration
 }
 
+type consulCommandType string
+
+type consulCommand struct {
+	command    consulCommandType
+	redisState redisState
+}
+
 // emit will emit a consul state change to the reconciler
 func (cc *consulConnection) emit() {
 	cc.stateCh <- *cc.state
@@ -63,6 +80,8 @@ func (cc *consulConnection) emit() {
 
 // cleanup will do cleanup tasks when the reconciler is shutting down
 func (cc *consulConnection) cleanup() {
+	defer wg.Done()
+
 	cc.logger.Debug("Releasing lock")
 	cc.releaseConsulLock()
 
@@ -421,6 +440,32 @@ func (cc *consulConnection) handleConsulError(err error) {
 	cc.logger.Errorf("Consul error: %v", err)
 }
 
+func (cc *consulConnection) commandRunner() {
+	for {
+		select {
+
+		case <-cc.stopCh:
+			return
+
+		case payload := <-cc.commandCh:
+			switch payload.command {
+			case registerServiceCommand:
+				cc.registerService(payload.redisState)
+			case deregisterServiceCommand:
+				cc.deregisterService()
+			case updateServiceCommand:
+				cc.setConsulCheckStatus(payload.redisState)
+			case releaseLockCommand:
+				cc.releaseConsulLock()
+			case startConsulCommand:
+				cc.start()
+			case stopConsulCommand:
+				cc.cleanup()
+			}
+		}
+	}
+}
+
 func (cc *consulConnection) start() {
 	go cc.continuouslyAcquireConsulLeadership()
 	go cc.watchConsulMasterService()
@@ -494,6 +539,7 @@ func newConsulConnection(c *cli.Context, redisConfig *redisConfig) (*consulConne
 			Jitter: false,
 		},
 		clientConfig: consulapi.DefaultConfig(),
+		commandCh:    make(chan consulCommand, 1),
 		config:       consulConfig,
 		logger:       log.WithField("system", "consul"),
 		masterCh:     make(chan interface{}, 1),

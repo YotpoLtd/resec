@@ -56,7 +56,6 @@ func (r *reconsiler) Run() {
 				continue
 			}
 			r.stateChanged = false
-			r.logger.Debugf("Reconsile changes")
 
 			// do we have the initial state to start reconciliation
 			if r.missingInitialState() {
@@ -64,13 +63,17 @@ func (r *reconsiler) Run() {
 				continue
 			}
 
+			// If Consul is not healthy, we can't make changes to the topology, as
+			// we are unable to update the Consul catalog
 			if r.isConsulUnhealhy() {
-				r.logger.Debugf("Can not reconsile, services are not healthy")
+				r.logger.Debugf("Can't reconsile, Consul is not healthy")
 				continue
 			}
 
+			// If Redis is not healthy, we can't re-configure Redis if need be, so the only
+			// option is to step down as leader (if we are) and remove our Consul service
 			if r.isRedisUnhealthy() {
-				r.logger.Debugf("Redis is not healthy, deregister consul service and don't change anything")
+				r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
 				r.consulConnection.releaseConsulLock()
 				r.consulConnection.deregisterService()
 				continue
@@ -81,7 +84,7 @@ func (r *reconsiler) Run() {
 
 				// redis is already configured as master, so just update the consul check
 				if r.isRedisMaster() {
-					r.logger.Debug("We are consul master *and* we run as Redis master")
+					r.logger.Debug("We are already Consul Master and we run as Redis Master")
 					r.consulConnection.setConsulCheckStatus(r.redisState)
 					continue
 				}
@@ -242,9 +245,6 @@ func (r *reconsiler) isSlaveOfCurrentMaster() bool {
 func (r *reconsiler) cleanup() {
 	r.logger.Debugf("Consul Cleanup started ")
 	r.consulConnection.cleanup()
-
-	r.logger.Debugf("Redis Cleanup started ")
-	r.redisConnection.cleanup()
 
 	r.logger.Debugf("Cleanup finished ")
 	close(r.stopCh)

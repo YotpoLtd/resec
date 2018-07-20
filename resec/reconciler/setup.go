@@ -23,11 +23,11 @@ func Setup(c *cli.Context) (*Reconciler, error) {
 	}
 
 	reconsiler := &Reconciler{
-		consulCommandCh:   consulConnection.CommandCh,
-		consulUpdateCh:    consulConnection.StateCh,
-		reconsileInterval: c.Duration("healthcheck-timeout"),
-		redisCommandCh:    redisConnection.CommandCh,
-		redisUpdateCh:     redisConnection.StateCh,
+		consulCommandCh:   consulConnection.CommandChWriter(),
+		consulStateCh:     consulConnection.StateChReader(),
+		reconcileInterval: c.Duration("healthcheck-timeout"),
+		redisCommandCh:    redisConnection.CommandChWriter(),
+		redisStateCh:      redisConnection.StateChReader(),
 		signalCh:          make(chan os.Signal, 1),
 		stopCh:            make(chan interface{}, 1),
 	}

@@ -16,32 +16,32 @@ var (
 	wg sync.WaitGroup
 )
 
-// Reconsiler will take a stream of changes happening to
+// reconciler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
 type Reconciler struct {
-	consulCommandCh   chan consul.Command // push updates to Consul manager
-	consulState       state.Consul        // last seen consul state
-	consulUpdateCh    chan state.Consul   // get updates from Consul manager
-	logger            *log.Entry          // reconciler logger
-	reconsileInterval time.Duration       // How often we should force reconsile
-	redisCommandCh    chan redis.Command  // push updates to Consul manager
-	redisState        state.Redis         // last seen redis state
-	redisUpdateCh     chan state.Redis    // get updates from Redis manager
-	shouldReconcile   bool                // Used to track if any state has been updated
-	signalCh          chan os.Signal      // signal channel (OS / signal shutdown)
-	stopCh            chan interface{}    // stop channel (internal shutdown)
+	consulCommandCh   chan<- consul.Command // Write-only channel to request Consul actions to be taken
+	consulState       state.Consul          // Latest (cached) Consul state
+	consulStateCh     <-chan state.Consul   // Read-only channel to get Consul state updates
+	logger            *log.Entry            // reconciler logger
+	reconcileInterval time.Duration         // How often we should force reconcile
+	redisCommandCh    chan<- redis.Command  // Write-only channel to request Redis actions to be taken
+	redisState        state.Redis           // Latest (cached) Redis state
+	redisStateCh      <-chan state.Redis    // Read-only channel to get Redis state updates
+	shouldReconcile   bool                  // Used to track if any state has been updated
+	signalCh          chan os.Signal        // signal channel (OS / signal shutdown)
+	stopCh            chan interface{}      // stop channel (internal shutdown)
 }
 
 // Run starts the procedure
 func (r *Reconciler) Run() {
-	r.logger = log.WithField("system", "reconsiler")
+	r.logger = log.WithField("system", "reconciler")
 
 	go r.stateReader()
 
 	r.consulCommandCh <- consul.NewCommand(consul.StartCommand, r.redisState)
 	r.redisCommandCh <- redis.NewCommand(redis.StartCommand, r.consulState)
 
-	// how frequenty to reconsile when redis/consul state changes
+	// how frequenty to reconcile when redis/consul state changes
 	t := time.NewTicker(100 * time.Millisecond)
 
 	for {
@@ -54,7 +54,7 @@ func (r *Reconciler) Run() {
 
 		// stop the infinite loop
 		case <-r.stopCh:
-			r.logger.Info("Shutdown requested, stopping reconsiler loop")
+			r.logger.Info("Shutdown requested, stopping reconciler loop")
 			return
 
 		case <-t.C:
@@ -66,14 +66,14 @@ func (r *Reconciler) Run() {
 
 			// do we have the initial state to start reconciliation
 			if r.missingInitialState() {
-				r.logger.Debug("Not ready to reconsile yet, missing initial state")
+				r.logger.Debug("Not ready to reconcile yet, missing initial state")
 				continue
 			}
 
 			// If Consul is not healthy, we can't make changes to the topology, as
 			// we are unable to update the Consul catalog
 			if r.isConsulUnhealhy() {
-				r.logger.Debugf("Can't reconsile, Consul is not healthy")
+				r.logger.Debugf("Can't reconcile, Consul is not healthy")
 				continue
 			}
 
@@ -132,7 +132,7 @@ func (r *Reconciler) Run() {
 
 func (r *Reconciler) stateReader() {
 	// how long to wait between forced renconcile (e.g. to keep TTL happy)
-	f := time.NewTimer(r.reconsileInterval)
+	f := time.NewTimer(r.reconcileInterval)
 
 	for {
 		select {
@@ -141,13 +141,13 @@ func (r *Reconciler) stateReader() {
 			r.logger.Info("Shutdown requested, stopping state loop")
 			return
 
-		// we fake state change to ensure we reconsile periodically
+		// we fake state change to ensure we reconcile periodically
 		case <-f.C:
 			r.shouldReconcile = true
-			f.Reset(r.reconsileInterval)
+			f.Reset(r.reconcileInterval)
 
 		// New redis state change
-		case redis, ok := <-r.redisUpdateCh:
+		case redis, ok := <-r.redisStateCh:
 			if !ok {
 				r.logger.Error("Redis replication channel was closed, shutting down")
 				return
@@ -156,10 +156,10 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Redis state")
 			r.redisState = redis
 			r.shouldReconcile = true
-			f.Reset(r.reconsileInterval)
+			f.Reset(r.reconcileInterval)
 
 		// New Consul state change
-		case consul, ok := <-r.consulUpdateCh:
+		case consul, ok := <-r.consulStateCh:
 			if !ok {
 				r.logger.Error("Consul master service channel was closed, shutting down")
 				return
@@ -168,7 +168,7 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Consul state")
 			r.consulState = consul
 			r.shouldReconcile = true
-			f.Reset(r.reconsileInterval)
+			f.Reset(r.reconcileInterval)
 		}
 	}
 }

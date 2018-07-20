@@ -19,9 +19,9 @@ type Connection struct {
 	logger       *log.Entry        // logger for the consul connection struct
 	masterCh     chan interface{}  // notification channel used to notify the Consul Lock go-routing that the master service changed
 	state        *state.Consul     // state used by the reconciler
-	StateCh      chan state.Consul // state channel used to notify the reconciler of changes
+	stateCh      chan state.Consul // state channel used to notify the reconciler of changes
 	stopCh       chan interface{}  // internal channel used to stop all go-routines when gracefully shutting down
-	CommandCh    chan Command
+	commandCh    chan Command
 }
 
 // Consul config used for internal state management

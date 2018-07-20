@@ -11,8 +11,8 @@ type Connection struct {
 	client    *redis.Client    // redis client
 	config    *RedisConfig     // redis config
 	state     *state.Redis     // redis state
-	StateCh   chan state.Redis // redis state channel to publish updates to the reconciler
-	CommandCh chan Command
+	stateCh   chan state.Redis // redis state channel to publish updates to the reconciler
+	commandCh chan Command
 	stopCh    chan interface{}
 }
 

@@ -13,91 +13,91 @@ import (
 )
 
 // emit will send a state update to the reconciler
-func (rc *Connection) emit() {
-	rc.StateCh <- *rc.state
+func (c *Connection) emit() {
+	c.stateCh <- *c.state
 }
 
 // runAsMaster sets the instance to be the master
-func (rc *Connection) runAsMaster() error {
-	if err := rc.client.SlaveOf("no", "one").Err(); err != nil {
+func (c *Connection) runAsMaster() error {
+	if err := c.client.SlaveOf("no", "one").Err(); err != nil {
 		return err
 	}
 
-	rc.logger.Info("Promoted redis to Master")
+	c.logger.Info("Promoted redis to Master")
 	return nil
 }
 
 // runAsSlave sets the instance to be a slave for the master
-func (rc *Connection) runAsSlave(masterAddress string, masterPort int) error {
-	rc.logger.Infof("Enslaving redis %s to be slave of %s:%d", rc.config.Address, masterAddress, masterPort)
+func (c *Connection) runAsSlave(masterAddress string, masterPort int) error {
+	c.logger.Infof("Enslaving redis %s to be slave of %s:%d", c.config.Address, masterAddress, masterPort)
 
-	if err := rc.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
-		return fmt.Errorf("Could not enslave redis %s to be slave of %s:%d (%v)", rc.config.Address, masterAddress, masterPort, err)
+	if err := c.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
+		return fmt.Errorf("Could not enslave redis %s to be slave of %s:%d (%v)", c.config.Address, masterAddress, masterPort, err)
 	}
 
-	rc.logger.Infof("Enslaved redis %s to be slave of %s:%d", rc.config.Address, masterAddress, masterPort)
+	c.logger.Infof("Enslaved redis %s to be slave of %s:%d", c.config.Address, masterAddress, masterPort)
 	return nil
 }
 
-func (rc *Connection) cleanup() {
-	close(rc.stopCh)
+func (c *Connection) cleanup() {
+	close(c.stopCh)
 
-	rc.state.Stopped = true
-	rc.emit()
+	c.state.Stopped = true
+	c.emit()
 }
 
-func (rc *Connection) start() {
-	go rc.watchReplicationStatus()
-	rc.waitForRedisToBeReady()
+func (c *Connection) start() {
+	go c.watchReplicationStatus()
+	c.waitForRedisToBeReady()
 }
 
-func (rc *Connection) CommandRunner() {
+func (c *Connection) CommandRunner() {
 	for {
 		select {
 
-		case <-rc.stopCh:
+		case <-c.stopCh:
 			return
 
-		case payload := <-rc.CommandCh:
-			switch payload.command {
+		case payload := <-c.commandCh:
+			switch payload.name {
 			case StartCommand:
-				rc.start()
+				c.start()
 
 			case StopCommand:
-				rc.cleanup()
+				c.cleanup()
 
 			case RunAsMasterCommand:
-				rc.runAsMaster()
+				c.runAsMaster()
 
 			case RunAsSlaveCommand:
-				rc.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort)
+				c.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort)
 			}
 		}
 	}
 }
 
 // watchReplicationStatus checks redis replication status
-func (rc *Connection) watchReplicationStatus() {
+func (c *Connection) watchReplicationStatus() {
 	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
-		result, err := rc.client.Info("replication").Result()
+		result, err := c.client.Info("replication").Result()
 		// any failure will trigger a disconnect event
 		if err != nil {
-			rc.state.Connected = false
-			rc.emit()
+			c.state.Connected = false
+			c.emit()
 
-			rc.logger.Errorf("Can't connect to redis: %+v", err)
+			c.logger.Errorf("Can't connect to redis: %+v", err)
 			continue
 		}
 
 		// if we previously was disconnected, but now succeded again, emit a (re)connected event
-		if rc.state.Connected == false {
-			rc.state.Connected = true
-			rc.emit()
+		if c.state.Connected == false {
+			c.state.Connected = true
+			c.emit()
 		}
 
-		kvPair := rc.parseKeyValue(result)
+		kvPair := c.parseKeyValue(result)
 
 		// Create new replication state
 		replicationState := state.RedisReplicationState{
@@ -119,33 +119,33 @@ func (rc *Connection) watchReplicationStatus() {
 
 		// compare current and new state, if no changes, don't publish
 		// a new state to the reconciler
-		if replicationState.Changed(rc.state.Replication) == false {
+		if replicationState.Changed(c.state.Replication) == false {
 			continue
 		}
 
-		rc.state.Replication = replicationState
-		rc.state.ReplicationString = result
-		rc.emit()
+		c.state.Replication = replicationState
+		c.state.ReplicationString = result
+		c.emit()
 	}
 }
 
 // waitForRedisToBeReady will check if we got the initial redis state we need
 // for the reconciler to do its job right out of the box
-func (rc *Connection) waitForRedisToBeReady() {
+func (c *Connection) waitForRedisToBeReady() {
 	t := time.NewTicker(500 * time.Millisecond)
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready
-		if rc.state.Replication.Role != "" {
-			rc.state.Ready = true
-			rc.emit()
+		if c.state.Replication.Role != "" {
+			c.state.Ready = true
+			c.emit()
 
 			return
 		}
 	}
 }
 
-func (rc *Connection) parseKeyValue(str string) map[string]string {
+func (c *Connection) parseKeyValue(str string) map[string]string {
 	res := make(map[string]string)
 
 	lines := strings.Split(str, "\r\n")
@@ -165,8 +165,16 @@ func (rc *Connection) parseKeyValue(str string) map[string]string {
 	return res
 }
 
-func (rc *Connection) Config() RedisConfig {
-	return *rc.config
+func (c *Connection) Config() RedisConfig {
+	return *c.config
+}
+
+func (c *Connection) StateChReader() <-chan state.Redis {
+	return c.stateCh
+}
+
+func (c *Connection) CommandChWriter() chan<- Command {
+	return c.commandCh
 }
 
 func NewConnection(c *cli.Context) (*Connection, error) {
@@ -184,8 +192,8 @@ func NewConnection(c *cli.Context) (*Connection, error) {
 		config:    redisConfig,
 		logger:    log.WithField("system", "redis"),
 		state:     &state.Redis{},
-		StateCh:   make(chan state.Redis, 1),
-		CommandCh: make(chan Command, 1),
+		stateCh:   make(chan state.Redis, 1),
+		commandCh: make(chan Command, 1),
 		stopCh:    make(chan interface{}, 1),
 	}
 

@@ -15,50 +15,50 @@ import (
 )
 
 // emit will emit a consul state change to the reconciler
-func (cc *Connection) emit() {
-	cc.StateCh <- *cc.state
+func (c *Connection) emit() {
+	c.stateCh <- *c.state
 }
 
 // cleanup will do cleanup tasks when the reconciler is shutting down
-func (cc *Connection) cleanup() {
-	cc.logger.Debug("Releasing lock")
-	cc.releaseConsulLock()
+func (c *Connection) cleanup() {
+	c.logger.Debug("Releasing lock")
+	c.releaseConsulLock()
 
-	cc.logger.Debug("Deregister service")
-	cc.deregisterService()
+	c.logger.Debug("Deregister service")
+	c.deregisterService()
 
-	cc.logger.Debug("Closing stopCh")
-	close(cc.stopCh)
+	c.logger.Debug("Closing stopCh")
+	close(c.stopCh)
 
-	cc.state.Stopped = true
-	cc.emit()
+	c.state.Stopped = true
+	c.emit()
 }
 
 // continuouslyAcquireConsulLeadership waits to acquire the lock to the Consul KV key.
 // it will run until the stopCh is closed
-func (cc *Connection) continuouslyAcquireConsulLeadership() {
+func (c *Connection) continuouslyAcquireConsulLeadership() {
 	t := time.NewTimer(250 * time.Millisecond)
 
 	for {
 		select {
 		// if closed, we should stop working
-		case <-cc.stopCh:
+		case <-c.stopCh:
 			return
 
 		// if consul master service have changes, immidately try to  claim the lock
 		// since there is a good chance the service changed because the current master
 		// went away
-		case <-cc.masterCh:
-			cc.acquireConsulLeadership()
+		case <-c.masterCh:
+			c.acquireConsulLeadership()
 
 		// Periodically try to acquire the consul lock
 		case <-t.C:
-			cc.acquireConsulLeadership()
+			c.acquireConsulLeadership()
 
 			// if we are not healthy, apply exponential backoff
-			if cc.state.Healthy == false {
-				d := cc.backoff.Duration()
-				cc.logger.Warnf("Consul is not healthy, going to apply backoff of %s until next attempt", d.Round(time.Second).String())
+			if c.state.Healthy == false {
+				d := c.backoff.Duration()
+				c.logger.Warnf("Consul is not healthy, going to apply backoff of %s until next attempt", d.Round(time.Second).String())
 				t.Reset(d)
 				continue
 			}
@@ -70,104 +70,104 @@ func (cc *Connection) continuouslyAcquireConsulLeadership() {
 
 // acquireConsulLeadership will one-off try to acquire the consul lock needed to become
 // redis Master node
-func (cc *Connection) acquireConsulLeadership() {
+func (c *Connection) acquireConsulLeadership() {
 	// if we already hold the lock, we can't acquire it again
-	if cc.state.LockIsHeld {
-		cc.logger.Debug("We already hold the lock, can't acquire it again")
+	if c.state.LockIsHeld {
+		c.logger.Debug("We already hold the lock, can't acquire it again")
 		return
 	}
 
 	// create the lock structs
 	lockOptions := &consulapi.LockOptions{
-		Key:              cc.config.lockKey,
-		SessionName:      cc.config.lockSessionName,
-		SessionTTL:       cc.config.lockTTL.String(),
-		MonitorRetries:   cc.config.lockMonitorRetries,
-		MonitorRetryTime: cc.config.lockMonitorRetryInterval,
+		Key:              c.config.lockKey,
+		SessionName:      c.config.lockSessionName,
+		SessionTTL:       c.config.lockTTL.String(),
+		MonitorRetries:   c.config.lockMonitorRetries,
+		MonitorRetryTime: c.config.lockMonitorRetryInterval,
 	}
 
 	var err error
-	cc.config.lock, err = cc.client.LockOpts(lockOptions)
+	c.config.lock, err = c.client.LockOpts(lockOptions)
 	if err != nil {
-		cc.logger.Error("Failed create lock options: %+v", err)
+		c.logger.Error("Failed create lock options: %+v", err)
 		return
 	}
 
 	// try to acquire the lock
-	cc.logger.Infof("Trying to acquire consul lock")
-	cc.lockErrorCh, err = cc.config.lock.Lock(cc.lockCh)
-	cc.handleConsulError(err)
+	c.logger.Infof("Trying to acquire consul lock")
+	c.lockErrorCh, err = c.config.lock.Lock(c.lockCh)
+	c.handleConsulError(err)
 	if err != nil {
 		return
 	}
 
-	cc.logger.Info("Lock successfully acquired")
+	c.logger.Info("Lock successfully acquired")
 
-	cc.state.LockIsHeld = true
-	cc.emit()
+	c.state.LockIsHeld = true
+	c.emit()
 
 	//
 	// start monitoring the consul lock for errors / changes
 	//
 
-	cc.config.voluntarilyReleaseLockCh = make(chan interface{})
+	c.config.voluntarilyReleaseLockCh = make(chan interface{})
 
 	// At this point, if we return from this function, we need to make sure
 	// we release the lock
 	defer func() {
-		err := cc.config.lock.Unlock()
-		cc.handleConsulError(err)
+		err := c.config.lock.Unlock()
+		c.handleConsulError(err)
 		if err != nil {
-			cc.logger.Errorf("Could not release Consul Lock: %v", err)
+			c.logger.Errorf("Could not release Consul Lock: %v", err)
 		} else {
-			cc.logger.Info("Consul Lock successfully released")
+			c.logger.Info("Consul Lock successfully released")
 		}
 
-		cc.state.LockIsHeld = false
-		cc.emit()
+		c.state.LockIsHeld = false
+		c.emit()
 	}()
 
 	// Wait for changes to Consul Lock
 	for {
 		select {
 		// Global stop of all go-routines, reconciler is shutting down
-		case <-cc.stopCh:
+		case <-c.stopCh:
 			return
 
 		// Changes on the lock error channel
 		// if the channel is closed, it mean that we no longer hold the lock
 		// if written to, we simply pass on the message
-		case data, ok := <-cc.lockErrorCh:
+		case data, ok := <-c.lockErrorCh:
 			if !ok {
-				cc.logger.Error("Consul Lock error channel was closed, we no longer hold the lock")
+				c.logger.Error("Consul Lock error channel was closed, we no longer hold the lock")
 				return
 			}
 
-			cc.logger.Warnf("Something wrote to lock error channel %+v", data)
+			c.logger.Warnf("Something wrote to lock error channel %+v", data)
 
 		// voluntarily release our claim on the lock
-		case <-cc.config.voluntarilyReleaseLockCh:
-			cc.logger.Warnf("Voluntarily releasing the Consul lock")
+		case <-c.config.voluntarilyReleaseLockCh:
+			c.logger.Warnf("Voluntarily releasing the Consul lock")
 			return
 		}
 	}
 }
 
 // releaseConsulLock stops consul lock handler")
-func (cc *Connection) releaseConsulLock() {
-	if cc.state.LockIsHeld == false {
-		cc.logger.Debug("Can't release Consul lock, we don't have it")
+func (c *Connection) releaseConsulLock() {
+	if c.state.LockIsHeld == false {
+		c.logger.Debug("Can't release Consul lock, we don't have it")
 		return
 	}
 
-	cc.logger.Info("Releasing Consul lock")
-	close(cc.config.voluntarilyReleaseLockCh)
+	c.logger.Info("Releasing Consul lock")
+	close(c.config.voluntarilyReleaseLockCh)
 }
 
 // getReplicationStatus will return current replication status
 // the default value is 'slave' - only if we hold the lock will 'master' be returned
-func (cc *Connection) getReplicationStatus() string {
-	if cc.state.LockIsHeld {
+func (c *Connection) getReplicationStatus() string {
+	if c.state.LockIsHeld {
 		return "master"
 	}
 
@@ -177,11 +177,11 @@ func (cc *Connection) getReplicationStatus() string {
 // getConsulServiceName will return the consul service name to use
 // depending on using tagged service (replication status as tag) or
 // service name (with replication status as suffix)
-func (cc *Connection) getConsulServiceName() string {
-	name := cc.config.serviceName
+func (c *Connection) getConsulServiceName() string {
+	name := c.config.serviceName
 
 	if name == "" {
-		name = cc.config.serviceNamePrefix + "-" + cc.getReplicationStatus()
+		name = c.config.serviceNamePrefix + "-" + c.getReplicationStatus()
 	}
 
 	return name
@@ -190,93 +190,93 @@ func (cc *Connection) getConsulServiceName() string {
 // getConsulServiceID will return the consul service ID
 // it will either use the service name, or the service name prefix depending
 // on your configuration
-func (cc *Connection) getConsulServiceID() string {
-	ID := cc.config.serviceName
+func (c *Connection) getConsulServiceID() string {
+	ID := c.config.serviceName
 
-	if cc.config.serviceName == "" {
-		ID = cc.config.serviceNamePrefix
+	if c.config.serviceName == "" {
+		ID = c.config.serviceNamePrefix
 	}
 
 	return ID
 }
 
 // registerService registers a service in consul
-func (cc *Connection) registerService(redisState state.Redis) {
-	serviceID := cc.getConsulServiceID()
-	replicationStatus := cc.getReplicationStatus()
+func (c *Connection) registerService(redisState state.Redis) {
+	serviceID := c.getConsulServiceID()
+	replicationStatus := c.getReplicationStatus()
 
-	cc.config.serviceID = serviceID + "@" + cc.config.announceAddr
-	cc.config.checkID = cc.config.serviceID + ":replication-status-check"
+	c.config.serviceID = serviceID + "@" + c.config.announceAddr
+	c.config.checkID = c.config.serviceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
-		ID:   cc.config.serviceID,
-		Port: cc.config.announcePort,
-		Name: cc.getConsulServiceName(),
-		Tags: cc.config.serviceTagsByRole[replicationStatus],
+		ID:   c.config.serviceID,
+		Port: c.config.announcePort,
+		Name: c.getConsulServiceName(),
+		Tags: c.config.serviceTagsByRole[replicationStatus],
 	}
 
-	if cc.config.announceHost != "" {
-		serviceInfo.Address = cc.config.announceHost
+	if c.config.announceHost != "" {
+		serviceInfo.Address = c.config.announceHost
 	}
 
-	cc.logger.Infof("Registering %s service in consul", serviceInfo.Name)
+	c.logger.Infof("Registering %s service in consul", serviceInfo.Name)
 
-	err := cc.client.Agent().ServiceRegister(serviceInfo)
-	cc.handleConsulError(err)
+	err := c.client.Agent().ServiceRegister(serviceInfo)
+	c.handleConsulError(err)
 	if err != nil {
 		return
 	}
 
-	cc.logger.Infof("Registered service %s (%s) with address %s:%d", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
+	c.logger.Infof("Registered service %s (%s) with address %s:%d", serviceInfo.Name, serviceInfo.ID, serviceInfo.Address, serviceInfo.Port)
 
 	check := &consulapi.AgentCheckRegistration{
 		Name:      "Resec: " + replicationStatus + " replication status",
-		ID:        cc.config.checkID,
-		ServiceID: cc.config.serviceID,
+		ID:        c.config.checkID,
+		ServiceID: c.config.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL:    cc.config.serviceTTL.String(),
+			TTL:    c.config.serviceTTL.String(),
 			Status: "warning",
-			DeregisterCriticalServiceAfter: cc.config.deregisterServiceAfter.String(),
+			DeregisterCriticalServiceAfter: c.config.deregisterServiceAfter.String(),
 		},
 	}
 
-	err = cc.client.Agent().CheckRegister(check)
-	cc.handleConsulError(err)
+	err = c.client.Agent().CheckRegister(check)
+	c.handleConsulError(err)
 }
 
 // deregisterService will deregister the consul service from Consul catalog
-func (cc *Connection) deregisterService() {
-	if cc.state.Healthy && cc.config.serviceID != "" {
-		err := cc.client.Agent().ServiceDeregister(cc.config.serviceID)
-		cc.handleConsulError(err)
+func (c *Connection) deregisterService() {
+	if c.state.Healthy && c.config.serviceID != "" {
+		err := c.client.Agent().ServiceDeregister(c.config.serviceID)
+		c.handleConsulError(err)
 		if err != nil {
-			cc.logger.Errorf("Can't deregister consul service: %s", err)
+			c.logger.Errorf("Can't deregister consul service: %s", err)
 		}
 	}
 
-	cc.config.serviceID = ""
-	cc.config.checkID = ""
+	c.config.serviceID = ""
+	c.config.checkID = ""
 }
 
 // setConsulCheckStatus sets consul status check TTL and output
-func (cc *Connection) setConsulCheckStatus(redisState state.Redis) {
-	if cc.config.checkID == "" {
-		cc.registerService(redisState)
+func (c *Connection) setConsulCheckStatus(redisState state.Redis) {
+	if c.config.checkID == "" {
+		c.registerService(redisState)
 	}
 
-	cc.logger.Debug("Updating Check TTL for service")
-	err := cc.client.Agent().UpdateTTL(cc.config.checkID, redisState.ReplicationString, "passing")
-	cc.handleConsulError(err)
+	c.logger.Debug("Updating Check TTL for service")
+	err := c.client.Agent().UpdateTTL(c.config.checkID, redisState.ReplicationString, "passing")
+	c.handleConsulError(err)
 }
 
 // getConsulMasterDetails will return the Consul service name and tag
 // that matches what the Resec acting as master will expose in Consul
-func (cc *Connection) getConsulMasterDetails() (serviceName string, serviceTag string) {
-	serviceName = cc.config.serviceNamePrefix + "-master"
+func (c *Connection) getConsulMasterDetails() (serviceName string, serviceTag string) {
+	serviceName = c.config.serviceNamePrefix + "-master"
 
-	if cc.config.serviceName != "" {
-		serviceName = cc.config.serviceName
-		serviceTag = cc.config.serviceTagsByRole["master"][0]
+	if c.config.serviceName != "" {
+		serviceName = c.config.serviceName
+		serviceTag = c.config.serviceTagsByRole["master"][0]
 	}
 
 	return serviceName, serviceTag
@@ -284,8 +284,8 @@ func (cc *Connection) getConsulMasterDetails() (serviceName string, serviceTag s
 
 // watchConsulMasterService starts watching the service (+ tags) that represents the
 // redis master service. All changes will be emitted to masterConsulServiceCh.
-func (cc *Connection) watchConsulMasterService() error {
-	serviceName, serviceTag := cc.getConsulMasterDetails()
+func (c *Connection) watchConsulMasterService() error {
+	serviceName, serviceTag := c.getConsulMasterDetails()
 
 	q := &consulapi.QueryOptions{
 		WaitIndex: 0,
@@ -298,122 +298,130 @@ func (cc *Connection) watchConsulMasterService() error {
 	for {
 		select {
 
-		case <-cc.stopCh:
+		case <-c.stopCh:
 			return nil
 
 		case <-t.C:
-			services, meta, err := cc.client.Health().Service(serviceName, serviceTag, true, q)
-			cc.handleConsulError(err)
+			services, meta, err := c.client.Health().Service(serviceName, serviceTag, true, q)
+			c.handleConsulError(err)
 			if err != nil {
-				t.Reset(cc.backoff.ForAttempt(cc.backoff.Attempt()))
+				t.Reset(c.backoff.ForAttempt(c.backoff.Attempt()))
 				continue
 			}
 
 			t.Reset(d)
 
 			if q.WaitIndex == meta.LastIndex {
-				cc.logger.Debugf("No change in master service health")
+				c.logger.Debugf("No change in master service health")
 				continue
 			}
 
 			q.WaitIndex = meta.LastIndex
 
 			if len(services) == 0 {
-				cc.logger.Warn("No (healthy) master service found in Consul catalog")
+				c.logger.Warn("No (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			if len(services) > 1 {
-				cc.logger.Error("More than 1 (healthy) master service found in Consul catalog")
+				c.logger.Error("More than 1 (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			master := services[0]
 
-			if cc.state.MasterAddr == master.Node.Address && cc.state.MasterPort == master.Service.Port {
-				cc.logger.Debugf("No change in master service configuration")
+			if c.state.MasterAddr == master.Node.Address && c.state.MasterPort == master.Service.Port {
+				c.logger.Debugf("No change in master service configuration")
 				continue
 			}
 
-			cc.state.MasterAddr = master.Node.Address
-			cc.state.MasterPort = master.Service.Port
-			cc.emit()
+			c.state.MasterAddr = master.Node.Address
+			c.state.MasterPort = master.Service.Port
+			c.emit()
 
-			cc.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", cc.state.MasterAddr, cc.state.MasterPort)
-			cc.masterCh <- true
+			c.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", c.state.MasterAddr, c.state.MasterPort)
+			c.masterCh <- true
 		}
 	}
 }
 
 // handleConsulError is the error handler
-func (cc *Connection) handleConsulError(err error) {
+func (c *Connection) handleConsulError(err error) {
 	// if no error
 	if err == nil {
 		// if state is healthy do nothing
-		if cc.state.Healthy {
+		if c.state.Healthy {
 			return
 		}
 
 		// reset exponential backoff
-		cc.backoff.Reset()
+		c.backoff.Reset()
 
 		// mark us as healthy
-		cc.state.Healthy = true
-		cc.emit()
+		c.state.Healthy = true
+		c.emit()
 
 		return
 	}
 
 	// if we get connection refused, we are not healthy
-	if cc.state.Healthy && strings.Contains(err.Error(), "dial tcp") {
-		cc.state.Healthy = false
-		cc.emit()
+	if c.state.Healthy && strings.Contains(err.Error(), "dial tcp") {
+		c.state.Healthy = false
+		c.emit()
 
-		cc.deregisterService()
+		c.deregisterService()
 
 	}
 
 	// if the check don't have a TTL, it mean that the service + check is gone
 	// deregister the service+check so we can register a new one
 	if strings.Contains(err.Error(), "does not have associated TTL") {
-		cc.deregisterService()
+		c.deregisterService()
 	}
 
-	cc.logger.Errorf("Consul error: %v", err)
+	c.logger.Errorf("Consul error: %v", err)
 }
 
-func (cc *Connection) CommandRunner() {
+func (c *Connection) CommandRunner() {
 	for {
 		select {
 
-		case <-cc.stopCh:
+		case <-c.stopCh:
 			return
 
-		case payload := <-cc.CommandCh:
-			switch payload.kind {
+		case payload := <-c.commandCh:
+			switch payload.name {
 			case RegisterServiceCommand:
-				cc.registerService(payload.redisState)
+				c.registerService(payload.redisState)
 			case DeregisterServiceCommand:
-				cc.deregisterService()
+				c.deregisterService()
 			case UpdateServiceCommand:
-				cc.setConsulCheckStatus(payload.redisState)
+				c.setConsulCheckStatus(payload.redisState)
 			case ReleaseLockCommand:
-				cc.releaseConsulLock()
+				c.releaseConsulLock()
 			case StartCommand:
-				cc.start()
+				c.start()
 			case StopConsulCommand:
-				cc.cleanup()
+				c.cleanup()
 			}
 		}
 	}
 }
 
-func (cc *Connection) start() {
-	go cc.continuouslyAcquireConsulLeadership()
-	go cc.watchConsulMasterService()
+func (c *Connection) start() {
+	go c.continuouslyAcquireConsulLeadership()
+	go c.watchConsulMasterService()
 
-	cc.state.Ready = true
-	cc.emit()
+	c.state.Ready = true
+	c.emit()
+}
+
+func (c *Connection) StateChReader() <-chan state.Consul {
+	return c.stateCh
+}
+
+func (c *Connection) CommandChWriter() chan<- Command {
+	return c.commandCh
 }
 
 func NewConnection(c *cli.Context, redisConfig redis.RedisConfig) (*Connection, error) {
@@ -481,11 +489,11 @@ func NewConnection(c *cli.Context, redisConfig redis.RedisConfig) (*Connection, 
 			Jitter: false,
 		},
 		clientConfig: consulapi.DefaultConfig(),
-		CommandCh:    make(chan Command, 1),
+		commandCh:    make(chan Command, 1),
 		config:       consulConfig,
 		logger:       log.WithField("system", "consul"),
 		masterCh:     make(chan interface{}, 1),
-		StateCh:      make(chan state.Consul),
+		stateCh:      make(chan state.Consul),
 		stopCh:       make(chan interface{}, 1),
 		state: &state.Consul{
 			Healthy: true,

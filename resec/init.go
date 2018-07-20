@@ -22,10 +22,11 @@ func setup(c *cli.Context) (*reconciler, error) {
 	}
 
 	reconsiler := &reconciler{
-		consulConnection: consulConnection,
-		redisConnection:  redisConnection,
-		sigCh:            make(chan os.Signal, 1),
-		stopCh:           make(chan interface{}, 1),
+		consulConnection:  consulConnection,
+		redisConnection:   redisConnection,
+		sigCh:             make(chan os.Signal, 1),
+		stopCh:            make(chan interface{}, 1),
+		reconsileInterval: c.Duration("healthcheck-timeout"),
 	}
 
 	signal.Notify(reconsiler.sigCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)

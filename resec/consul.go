@@ -303,20 +303,28 @@ func (cc *consulConnection) setConsulCheckStatus(redisState redisState) {
 		cc.registerService(redisState)
 	}
 
+	cc.logger.Debug("Updating Check TTL for service")
 	err := cc.client.Agent().UpdateTTL(cc.config.checkID, redisState.replicationString, "passing")
 	cc.handleConsulError(err)
 }
 
-// watchConsulMasterService starts watching the service (+ tags) that represents the
-// redis master service. All changes will be emitted to masterConsulServiceCh.
-func (cc *consulConnection) watchConsulMasterService() error {
-	serviceName := cc.config.serviceNamePrefix + "-master"
-	serviceTag := ""
+// getConsulMasterDetails will return the Consul service name and tag
+// that matches what the Resec acting as master will expose in Consul
+func (cc *consulConnection) getConsulMasterDetails() (serviceName string, serviceTag string) {
+	serviceName = cc.config.serviceNamePrefix + "-master"
 
 	if cc.config.serviceName != "" {
 		serviceName = cc.config.serviceName
 		serviceTag = cc.config.serviceTagsByRole["master"][0]
 	}
+
+	return serviceName, serviceTag
+}
+
+// watchConsulMasterService starts watching the service (+ tags) that represents the
+// redis master service. All changes will be emitted to masterConsulServiceCh.
+func (cc *consulConnection) watchConsulMasterService() error {
+	serviceName, serviceTag := cc.getConsulMasterDetails()
 
 	q := &consulapi.QueryOptions{
 		WaitIndex: 0,
@@ -350,16 +358,21 @@ func (cc *consulConnection) watchConsulMasterService() error {
 			q.WaitIndex = meta.LastIndex
 
 			if len(services) == 0 {
-				cc.logger.Info("0 master services found in Consul catalog")
+				cc.logger.Warn("No (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			if len(services) > 1 {
-				cc.logger.Warn("More than 1 master service found in Consul catalog")
+				cc.logger.Error("More than 1 (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			master := services[0]
+
+			if cc.state.masterAddr == master.Node.Address && cc.state.masterPort == master.Service.Port {
+				cc.logger.Debugf("No change in master service configuration")
+				continue
+			}
 
 			cc.state.masterAddr = master.Node.Address
 			cc.state.masterPort = master.Service.Port
@@ -367,7 +380,6 @@ func (cc *consulConnection) watchConsulMasterService() error {
 
 			cc.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", cc.state.masterAddr, cc.state.masterPort)
 			cc.masterCh <- true
-			cc.logger.Infof("DÅNE")
 		}
 	}
 }

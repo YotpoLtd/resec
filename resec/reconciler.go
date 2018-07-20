@@ -11,16 +11,17 @@ import (
 // Reconsiler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
 type reconciler struct {
-	logger           *log.Entry
-	consulConnection *consulConnection // reference to the consul connection
-	consulUpdateCh   chan consulState  // get updates from Consul manager
-	consulState      consulState       // last seen consul state
-	redisConnection  *redisConnection  // reference to the redis connection
-	redisUpdateCh    chan redisState   // get updates from Redis manager
-	redisState       redisState        // last seen redis state
-	sigCh            chan os.Signal    // signal channel (OS / signal shutdown)
-	stopCh           chan interface{}  // stop channel (internal shutdown)
-	stateChanged     bool
+	logger            *log.Entry
+	consulConnection  *consulConnection // reference to the consul connection
+	consulUpdateCh    chan consulState  // get updates from Consul manager
+	consulState       consulState       // last seen consul state
+	redisConnection   *redisConnection  // reference to the redis connection
+	redisUpdateCh     chan redisState   // get updates from Redis manager
+	redisState        redisState        // last seen redis state
+	sigCh             chan os.Signal    // signal channel (OS / signal shutdown)
+	stopCh            chan interface{}  // stop channel (internal shutdown)
+	shouldReconcile   bool              // Used to track if any state has been updated
+	reconsileInterval time.Duration     // How often we should force reconsile
 }
 
 // Run starts the procedure
@@ -52,10 +53,10 @@ func (r *reconciler) run() {
 
 		case <-t.C:
 			// No new state since last, doing nothing
-			if r.stateChanged == false {
+			if r.shouldReconcile == false {
 				continue
 			}
-			r.stateChanged = false
+			r.shouldReconcile = false
 
 			// do we have the initial state to start reconciliation
 			if r.missingInitialState() {
@@ -125,8 +126,7 @@ func (r *reconciler) run() {
 
 func (r *reconciler) stateReader() {
 	// how long to wait between forced renconsile (e.g. to keep TTL happy)
-	t := 5 * time.Second
-	f := time.NewTimer(t)
+	f := time.NewTimer(r.reconsileInterval)
 
 	for {
 		select {
@@ -137,8 +137,8 @@ func (r *reconciler) stateReader() {
 
 		// we fake state change to ensure we reconsile periodically
 		case <-f.C:
-			r.stateChanged = true
-			f.Reset(t)
+			r.shouldReconcile = true
+			f.Reset(r.reconsileInterval)
 
 		// New redis state change
 		case redis, ok := <-r.redisUpdateCh:
@@ -149,8 +149,8 @@ func (r *reconciler) stateReader() {
 
 			r.logger.Debug("New Redis state")
 			r.redisState = redis
-			r.stateChanged = true
-			f.Reset(t)
+			r.shouldReconcile = true
+			f.Reset(r.reconsileInterval)
 
 		// New Consul state change
 		case consul, ok := <-r.consulUpdateCh:
@@ -161,8 +161,8 @@ func (r *reconciler) stateReader() {
 
 			r.logger.Debug("New Consul state")
 			r.consulState = consul
-			r.stateChanged = true
-			f.Reset(t)
+			r.shouldReconcile = true
+			f.Reset(r.reconsileInterval)
 		}
 	}
 }

@@ -145,7 +145,7 @@ func (rc *redisConnection) watchReplicationStatus() {
 // waitForRedisToBeReady will check if we got the initial redis state we need
 // for the reconciler to do its job right out of the box
 func (rc *redisConnection) waitForRedisToBeReady() {
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(500 * time.Millisecond)
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready

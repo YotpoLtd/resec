@@ -13,7 +13,7 @@ func Run() error {
 	app := cli.NewApp()
 	app.Name = "resec"
 	app.Usage = "Redis cluster manager"
-	app.Version = "x.y.z!"
+	app.Version = "x.y.z"
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -116,12 +116,12 @@ func Run() error {
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {
-		r, err := Setup(c)
+		r, err := setup(c)
 		if err != nil {
 			return err
 		}
 
-		r.Run()
+		r.run()
 		return nil
 	}
 

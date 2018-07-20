@@ -10,7 +10,7 @@ import (
 )
 
 // setup returns the default configuration for the ReSeC
-func Setup(c *cli.Context) (*reconciler, error) {
+func setup(c *cli.Context) (*reconciler, error) {
 	redisConnection, err := newRedisConnection(c)
 	if err != nil {
 		log.Fatal(err)

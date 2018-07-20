@@ -24,7 +24,7 @@ type reconciler struct {
 }
 
 // Run starts the procedure
-func (r *reconciler) Run() {
+func (r *reconciler) run() {
 	r.logger = log.WithField("system", "reconsiler")
 
 	r.redisUpdateCh = r.redisConnection.stateCh

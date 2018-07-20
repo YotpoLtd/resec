@@ -106,13 +106,12 @@ func Run() error {
 		},
 	}
 	app.Before = func(c *cli.Context) error {
-		// convert the human passed log level into logrus levels
 		level, err := log.ParseLevel(c.String("log-level"))
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-		log.SetLevel(level)
 
+		log.SetLevel(level)
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {

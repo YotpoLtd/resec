@@ -2,13 +2,13 @@ package resec
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-redis/redis"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/urfave/cli.v1"
 )
 
 type redisConnection struct {
@@ -222,37 +222,30 @@ func parseKeyValue(str string) map[string]string {
 	return res
 }
 
-func newRedisConnection(config *config) (*redisConnection, error) {
-	redisConfig := &redisConfig{}
-	redisConfig.address = "127.0.0.1:6379"
-
-	if redisAddr := os.Getenv(RedisAddr); redisAddr != "" {
-		redisConfig.address = redisAddr
-	}
-
-	if redisPassword := os.Getenv(RedisPassword); redisPassword != "" {
-		redisConfig.password = redisPassword
+func newRedisConnection(c *cli.Context) (*redisConnection, error) {
+	redisConfig := &redisConfig{
+		address:  c.String("redis-addr"),
+		password: c.String("redis-password"),
 	}
 
 	redisOptions := &redis.Options{
 		Addr:        redisConfig.address,
-		DialTimeout: config.healthCheckTimeout,
-		ReadTimeout: config.healthCheckTimeout,
+		DialTimeout: c.Duration("healthcheck-timeout"),
+		Password:    redisConfig.password,
+		ReadTimeout: c.Duration("healthcheck-timeout"),
 	}
 
-	if redisConfig.password != "" {
-		redisOptions.Password = redisConfig.password
+	connection := &redisConnection{
+		client:  redis.NewClient(redisOptions),
+		config:  redisConfig,
+		logger:  log.WithField("system", "redis"),
+		state:   &redisState{},
+		stateCh: make(chan redisState, 1),
 	}
 
-	connection := &redisConnection{}
-	connection.logger = log.WithField("system", "redis")
-	connection.config = redisConfig
-	connection.client = redis.NewClient(redisOptions)
 	if err := connection.client.Ping().Err(); err != nil {
-		return nil, fmt.Errorf("[CRITICAL] Can't communicate to Redis server: %s", err)
+		return nil, fmt.Errorf("Can't communicate to Redis server: %s", err)
 	}
-	connection.state = &redisState{}
-	connection.stateCh = make(chan redisState, 1)
 
 	return connection, nil
 }

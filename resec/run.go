@@ -1,16 +1,15 @@
-package main
+package resec
 
 import (
 	"os"
 	"sort"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )
 
-func main() {
+func Run() error {
 	app := cli.NewApp()
 	app.Name = "resec"
 	app.Usage = "Redis cluster manager"
@@ -105,15 +104,17 @@ func main() {
 		},
 	}
 	app.Before = func(c *cli.Context) error {
+		// convert the human passed log level into logrus levels
 		level, err := log.ParseLevel(c.String("log-level"))
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
 		log.SetLevel(level)
+
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {
-		r, err := resec.Setup(c)
+		r, err := Setup(c)
 		if err != nil {
 			return err
 		}
@@ -124,7 +125,5 @@ func main() {
 
 	sort.Sort(cli.FlagsByName(app.Flags))
 	sort.Sort(cli.CommandsByName(app.Commands))
-	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
-	}
+	return app.Run(os.Args)
 }

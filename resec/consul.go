@@ -2,14 +2,15 @@ package resec
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/jpillora/backoff"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/urfave/cli.v1"
 )
 
 type consulConnection struct {
@@ -419,92 +420,48 @@ func (cc *consulConnection) start() {
 	cc.emit()
 }
 
-func newConsulConnection(config *config, redisConfig *redisConfig) (*consulConnection, error) {
-	consulConfig := &consulConfig{}
-	consulConfig.deregisterServiceAfter = 72 * time.Hour
-	consulConfig.lockKey = "resec/.lock"
-	consulConfig.lockMonitorRetryInterval = time.Second
-	consulConfig.lockSessionName = "resec"
-	consulConfig.lockMonitorRetries = 3
-	consulConfig.lockTTL = 15 * time.Second
-	consulConfig.serviceTagsByRole = make(map[string][]string)
-	consulConfig.serviceNamePrefix = "redis"
-
-	if consulServiceName := os.Getenv(ConsulServiceName); consulServiceName != "" {
-		consulConfig.serviceName = consulServiceName
-	} else if consulServicePrefix := os.Getenv(ConsulServicePrefix); consulServicePrefix != "" {
-		consulConfig.serviceNamePrefix = consulServicePrefix
+func newConsulConnection(c *cli.Context, redisConfig *redisConfig) (*consulConnection, error) {
+	consulConfig := &consulConfig{
+		deregisterServiceAfter:   c.Duration("consul-deregister-service-after"),
+		lockKey:                  c.String("consul-lock-key"),
+		lockMonitorRetries:       c.Int("consul-lock-monitor-retries"),
+		lockMonitorRetryInterval: c.Duration("consul-lock-monitor-retry-interval"),
+		lockSessionName:          c.String("consul-lock-session-name"),
+		lockTTL:                  c.Duration("consul-lock-ttl"),
+		serviceName:              c.String("consul-service-name"),
+		serviceNamePrefix:        c.String("consul-service-prefix"),
+		serviceTTL:               c.Duration("healthcheck-timeout") * 2,
+		serviceTagsByRole: map[string][]string{
+			"master": make([]string, 0),
+			"slave":  make([]string, 0),
+		},
 	}
+	spew.Dump(consulConfig)
+	log.Fatal("end")
 
-	// Fail if CONSUL_SERVICE_NAME is used and no MASTER_TAGS are provided
-	if masterTags := os.Getenv(MasterTags); masterTags != "" {
+	if masterTags := c.String("master-tags"); masterTags != "" {
 		consulConfig.serviceTagsByRole["master"] = strings.Split(masterTags, ",")
 	} else if consulConfig.serviceName != "" {
-		return nil, fmt.Errorf("[ERROR] MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
+		return nil, fmt.Errorf("MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
 	}
 
-	if slaveTags := os.Getenv(SlaveTags); slaveTags != "" {
+	if slaveTags := c.String("slave-tags"); slaveTags != "" {
 		consulConfig.serviceTagsByRole["slave"] = strings.Split(slaveTags, ",")
 	}
 
 	if consulConfig.serviceName != "" {
 		if len(consulConfig.serviceTagsByRole["slave"]) >= 1 && len(consulConfig.serviceTagsByRole["master"]) >= 1 {
 			if consulConfig.serviceTagsByRole["slave"][0] == consulConfig.serviceTagsByRole["master"][0] {
-				return nil, fmt.Errorf("[PANIC] The first tag in %s and %s must be unique", MasterTags, SlaveTags)
+				return nil, fmt.Errorf("The first tag in MASTER_TAGS and SLAVE_TAGS must be unique")
 			}
 		}
 	}
 
-	if consulLockKey := os.Getenv(ConsulLockKey); consulLockKey != "" {
-		consulConfig.lockKey = consulLockKey
+	if consulConfig.lockTTL < 15*time.Second {
+		return nil, fmt.Errorf("Minimum Consul lock session TTL is 15s")
 	}
 
-	if consulLockSessionName := os.Getenv(ConsulLockSessionName); consulLockSessionName != "" {
-		consulConfig.lockSessionName = consulLockSessionName
-	}
-
-	if consulLockMonitorRetries := os.Getenv(ConsulLockMonitorRetries); consulLockMonitorRetries != "" {
-		consulLockMonitorRetriesInt, err := strconv.Atoi(consulLockMonitorRetries)
-		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as int: %s", ConsulLockMonitorRetries, consulLockMonitorRetries, err)
-		}
-
-		consulConfig.lockMonitorRetries = consulLockMonitorRetriesInt
-	}
-
-	if consulLockMonitorRetryInterval := os.Getenv(ConsulLockMonitorRetryInterval); consulLockMonitorRetryInterval != "" {
-		consulLockMonitorRetryIntervalDuration, err := time.ParseDuration(consulLockMonitorRetryInterval)
-		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulLockMonitorRetryInterval, consulLockMonitorRetryInterval, err)
-		}
-
-		consulConfig.lockMonitorRetryInterval = consulLockMonitorRetryIntervalDuration
-	}
-
-	if consulDeregisterServiceAfter := os.Getenv(ConsulDeregisterServiceAfter); consulDeregisterServiceAfter != "" {
-		consulDeregisterServiceAfterDuration, err := time.ParseDuration(consulDeregisterServiceAfter)
-		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulDeregisterServiceAfter, consulDeregisterServiceAfter, err)
-		}
-
-		consulConfig.deregisterServiceAfter = consulDeregisterServiceAfterDuration
-
-	}
-
-	if consuLockTTL := os.Getenv(ConsulLockTTL); consuLockTTL != "" {
-		consuLockTTLDuration, err := time.ParseDuration(consuLockTTL)
-		if err != nil {
-			return nil, fmt.Errorf("[ERROR] Trouble parsing %s [%s] as time: %s", ConsulLockTTL, consuLockTTL, err)
-		}
-
-		if consuLockTTLDuration < time.Second*15 {
-			return nil, fmt.Errorf("[CRITICAL] Minimum Consul lock session TTL is 15s")
-		}
-
-		consulConfig.lockTTL = consuLockTTLDuration
-	}
-
-	announceAddr := os.Getenv(AnnounceAddr)
+	announceAddr := c.String("announce-addr")
 	if announceAddr == "" {
 		redisHost := strings.Split(redisConfig.address, ":")[0]
 		redisPort := strings.Split(redisConfig.address, ":")[1]
@@ -519,32 +476,31 @@ func newConsulConnection(config *config, redisConfig *redisConfig) (*consulConne
 	consulConfig.announceHost = strings.Split(consulConfig.announceAddr, ":")[0]
 	consulConfig.announcePort, err = strconv.Atoi(strings.Split(consulConfig.announceAddr, ":")[1])
 	if err != nil {
-		return nil, fmt.Errorf("[ERROR] Trouble extracting port number from [%s]", redisConfig.address)
+		return nil, fmt.Errorf("Trouble extracting port number from [%s]", redisConfig.address)
 	}
 
-	consulConfig.serviceTTL = config.healthCheckInterval * 2
+	connection := &consulConnection{
+		backoff: &backoff.Backoff{
+			Min:    50 * time.Millisecond,
+			Max:    10 * time.Second,
+			Factor: 1.5,
+			Jitter: false,
+		},
+		clientConfig: consulapi.DefaultConfig(),
+		config:       consulConfig,
+		logger:       log.WithField("system", "consul"),
+		masterCh:     make(chan interface{}, 1),
+		stateCh:      make(chan consulState),
+		stopCh:       make(chan interface{}, 1),
+		state: &consulState{
+			healthy: true,
+		},
+	}
 
-	clientConfig := consulapi.DefaultConfig()
-	connection := &consulConnection{}
-	connection.logger = log.WithField("system", "consul")
-	connection.stopCh = make(chan interface{}, 1)
-	connection.masterCh = make(chan interface{}, 1)
-	connection.config = consulConfig
-	connection.clientConfig = clientConfig
 	connection.client, err = consulapi.NewClient(connection.clientConfig)
 	if err != nil {
 		return nil, err
 	}
-	connection.state = &consulState{
-		healthy: true,
-	}
-	connection.backoff = &backoff.Backoff{
-		Min:    50 * time.Millisecond,
-		Max:    10 * time.Second,
-		Factor: 1.5,
-		Jitter: false,
-	}
-	connection.stateCh = make(chan consulState)
 
 	return connection, nil
 }

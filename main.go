@@ -97,10 +97,12 @@ func main() {
 		cli.StringFlag{
 			Name:   "redis-addr",
 			Value:  "127.0.0.1:6379",
+			Usage:  "Address used to connect to the Redis server",
 			EnvVar: "REDIS_ADDR",
 		},
 		cli.StringFlag{
 			Name:   "redis-password",
+			Usage:  "Password used to connect to the Redis server",
 			EnvVar: "REDIS_PASSWORD",
 		},
 	}

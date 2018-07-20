@@ -1,4 +1,4 @@
-package resec
+package reconciler
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 )
 
 // setup returns the default configuration for the ReSeC
-func setup(c *cli.Context) (*reconciler, error) {
+func Setup(c *cli.Context) (*Reconciler, error) {
 	redisConnection, err := redis.NewConnection(c)
 	if err != nil {
 		return nil, err
@@ -22,7 +22,7 @@ func setup(c *cli.Context) (*reconciler, error) {
 		return nil, err
 	}
 
-	reconsiler := &reconciler{
+	reconsiler := &Reconciler{
 		consulCommandCh:   consulConnection.CommandCh,
 		consulUpdateCh:    consulConnection.StateCh,
 		reconsileInterval: c.Duration("healthcheck-timeout"),

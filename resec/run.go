@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/YotpoLtd/resec/resec/reconciler"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )
@@ -115,12 +116,12 @@ func Run() error {
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {
-		r, err := setup(c)
+		r, err := reconciler.Setup(c)
 		if err != nil {
 			return err
 		}
 
-		r.run()
+		r.Run()
 		return nil
 	}
 

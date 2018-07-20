@@ -18,7 +18,7 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:   "announce-addr",
+			Name:   "consul-announce-addr",
 			Usage:  "IP:Port of Redis to be announced, by default service will be registered with",
 			EnvVar: "ANNOUNCE_ADDR",
 		},
@@ -68,6 +68,16 @@ func main() {
 			Value:  "redis",
 			EnvVar: "CONSUL_SERVICE_PREFIX",
 		},
+		cli.StringFlag{
+			Name:   "consul-master-tags",
+			Usage:  "Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
+			EnvVar: "MASTER_TAGS",
+		},
+		cli.StringFlag{
+			Name:   "consul-slave-tags",
+			Usage:  "Comma separated list of tags to be added to slave instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in MASTER_TAGS",
+			EnvVar: "SLAVE_TAGS",
+		},
 		cli.DurationFlag{
 			Name:   "healthcheck-interval",
 			Value:  5 * time.Second,
@@ -85,11 +95,6 @@ func main() {
 			EnvVar: "LOG_LEVEL",
 		},
 		cli.StringFlag{
-			Name:   "master-tags",
-			Usage:  "Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
-			EnvVar: "MASTER_TAGS",
-		},
-		cli.StringFlag{
 			Name:   "redis-addr",
 			Value:  "127.0.0.1:6379",
 			EnvVar: "REDIS_ADDR",
@@ -97,11 +102,6 @@ func main() {
 		cli.StringFlag{
 			Name:   "redis-password",
 			EnvVar: "REDIS_PASSWORD",
-		},
-		cli.StringFlag{
-			Name:   "slave-tags",
-			Usage:  "Comma separated list of tags to be added to slave instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in MASTER_TAGS",
-			EnvVar: "SLAVE_TAGS",
 		},
 	}
 	app.Before = func(c *cli.Context) error {

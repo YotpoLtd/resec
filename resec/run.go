@@ -13,17 +13,17 @@ func Run() error {
 	app := cli.NewApp()
 	app.Name = "resec"
 	app.Usage = "Redis cluster manager"
-	app.Version = "x.y.z"
+	app.Version = "x.y.z!"
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:   "announce-addr",
-			Usage:  "IP:Port of Redis to be announced, by default service will be registered with",
+			Usage:  "IP:Port of Redis to be announced to Consul",
 			EnvVar: "ANNOUNCE_ADDR",
 		},
 		cli.DurationFlag{
 			Name:   "consul-deregister-service-after",
-			Usage:  "",
+			Usage:  "Specifies that checks associated with a service should deregister after this time. If a check is in the critical state for more than this configured value, then its associated service (and all of its associated checks) will automatically be deregistered",
 			Value:  72 * time.Hour,
 			EnvVar: "CONSUL_DEREGISTER_SERVICE_AFTER",
 		},
@@ -67,6 +67,16 @@ func Run() error {
 			Value:  "redis",
 			EnvVar: "CONSUL_SERVICE_PREFIX",
 		},
+		cli.StringFlag{
+			Name:   "consul-master-tags",
+			Usage:  "Comma separatxed list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
+			EnvVar: "MASTER_TAGS",
+		},
+		cli.StringFlag{
+			Name:   "consul-slave-tags",
+			Usage:  "Comma separated list of tags to be added to slave instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in MASTER_TAGS",
+			EnvVar: "SLAVE_TAGS",
+		},
 		cli.DurationFlag{
 			Name:   "healthcheck-interval",
 			Value:  5 * time.Second,
@@ -84,23 +94,15 @@ func Run() error {
 			EnvVar: "LOG_LEVEL",
 		},
 		cli.StringFlag{
-			Name:   "master-tags",
-			Usage:  "Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
-			EnvVar: "MASTER_TAGS",
-		},
-		cli.StringFlag{
 			Name:   "redis-addr",
 			Value:  "127.0.0.1:6379",
+			Usage:  "IP + Port for the Redis server",
 			EnvVar: "REDIS_ADDR",
 		},
 		cli.StringFlag{
 			Name:   "redis-password",
+			Usage:  "Password for the Redis server",
 			EnvVar: "REDIS_PASSWORD",
-		},
-		cli.StringFlag{
-			Name:   "slave-tags",
-			Usage:  "Comma separated list of tags to be added to slave instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in MASTER_TAGS",
-			EnvVar: "SLAVE_TAGS",
 		},
 	}
 	app.Before = func(c *cli.Context) error {

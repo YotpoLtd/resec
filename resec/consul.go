@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/jpillora/backoff"
 	log "github.com/sirupsen/logrus"
@@ -436,16 +435,14 @@ func newConsulConnection(c *cli.Context, redisConfig *redisConfig) (*consulConne
 			"slave":  make([]string, 0),
 		},
 	}
-	spew.Dump(consulConfig)
-	log.Fatal("end")
 
-	if masterTags := c.String("master-tags"); masterTags != "" {
+	if masterTags := c.String("consul-master-tags"); masterTags != "" {
 		consulConfig.serviceTagsByRole["master"] = strings.Split(masterTags, ",")
 	} else if consulConfig.serviceName != "" {
 		return nil, fmt.Errorf("MASTER_TAGS is required when CONSUL_SERVICE_NAME is used")
 	}
 
-	if slaveTags := c.String("slave-tags"); slaveTags != "" {
+	if slaveTags := c.String("consul-slave-tags"); slaveTags != "" {
 		consulConfig.serviceTagsByRole["slave"] = strings.Split(slaveTags, ",")
 	}
 

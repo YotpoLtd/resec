@@ -20,8 +20,7 @@ type redisConnection struct {
 }
 
 type redisConfig struct {
-	address  string // address (IP+Port) used to talk to Redis
-	password string // password used to talk to Redis
+	address string // address (IP+Port) used to talk to Redis
 }
 
 // Redis state represent the full state of the connection with Redis
@@ -224,19 +223,16 @@ func parseKeyValue(str string) map[string]string {
 
 func newRedisConnection(c *cli.Context) (*redisConnection, error) {
 	redisConfig := &redisConfig{
-		address:  c.String("redis-addr"),
-		password: c.String("redis-password"),
-	}
-
-	redisOptions := &redis.Options{
-		Addr:        redisConfig.address,
-		DialTimeout: c.Duration("healthcheck-timeout"),
-		Password:    redisConfig.password,
-		ReadTimeout: c.Duration("healthcheck-timeout"),
+		address: c.String("redis-addr"),
 	}
 
 	connection := &redisConnection{
-		client:  redis.NewClient(redisOptions),
+		client: redis.NewClient(&redis.Options{
+			Addr:        redisConfig.address,
+			DialTimeout: c.Duration("healthcheck-timeout"),
+			Password:    c.String("redis-password"),
+			ReadTimeout: c.Duration("healthcheck-timeout"),
+		}),
 		config:  redisConfig,
 		logger:  log.WithField("system", "redis"),
 		state:   &redisState{},

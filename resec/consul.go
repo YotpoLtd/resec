@@ -162,8 +162,6 @@ func (cc *consulConnection) acquireConsulLeadership() {
 			cc.logger.Info("Consul Lock successfully released")
 		}
 
-		// cc.deregisterService() // not needed?
-
 		cc.state.lockIsHeld = false
 		cc.emit()
 	}()

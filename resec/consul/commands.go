@@ -3,22 +3,22 @@ package consul
 import "github.com/YotpoLtd/resec/resec/state"
 
 const (
-	StartCommand             = commandName("start")
-	StopConsulCommand        = commandName("stop")
-	RegisterServiceCommand   = commandName("register_service")
-	DeregisterServiceCommand = commandName("deregister_service")
-	UpdateServiceCommand     = commandName("update_service")
-	ReleaseLockCommand       = commandName("release_lock")
+	StartCommand             = CommandName("start")
+	StopConsulCommand        = CommandName("stop")
+	RegisterServiceCommand   = CommandName("register_service")
+	DeregisterServiceCommand = CommandName("deregister_service")
+	UpdateServiceCommand     = CommandName("update_service")
+	ReleaseLockCommand       = CommandName("release_lock")
 )
 
-type commandName string
+type CommandName string
 
 type Command struct {
-	name       commandName
+	name       CommandName
 	redisState state.Redis
 }
 
-func NewCommand(cmd commandName, redisState state.Redis) Command {
+func NewCommand(cmd CommandName, redisState state.Redis) Command {
 	return Command{
 		name:       cmd,
 		redisState: redisState,

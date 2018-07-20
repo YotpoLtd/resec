@@ -3,20 +3,20 @@ package redis
 import "github.com/YotpoLtd/resec/resec/state"
 
 const (
-	StartCommand       = commandName("start")
-	StopCommand        = commandName("stop")
-	RunAsSlaveCommand  = commandName("run_as_slave")
-	RunAsMasterCommand = commandName("run_as_master")
+	StartCommand       = CommandName("start")
+	StopCommand        = CommandName("stop")
+	RunAsSlaveCommand  = CommandName("run_as_slave")
+	RunAsMasterCommand = CommandName("run_as_master")
 )
 
-type commandName string
+type CommandName string
 
 type Command struct {
-	name        commandName
+	name        CommandName
 	consulState state.Consul
 }
 
-func NewCommand(cmd commandName, consulState state.Consul) Command {
+func NewCommand(cmd CommandName, consulState state.Consul) Command {
 	return Command{
 		name:        cmd,
 		consulState: consulState,

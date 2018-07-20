@@ -32,14 +32,22 @@ type Reconciler struct {
 	stopCh            chan interface{}      // stop channel (internal shutdown)
 }
 
+func (r *Reconciler) redisCommand(cmd redis.CommandName) {
+	r.redisCommandCh <- redis.NewCommand(cmd, r.consulState)
+}
+
+func (r *Reconciler) consulCommand(cmd consul.CommandName) {
+	r.consulCommandCh <- consul.NewCommand(cmd, r.redisState)
+}
+
 // Run starts the procedure
 func (r *Reconciler) Run() {
 	r.logger = log.WithField("system", "reconciler")
 
 	go r.stateReader()
 
-	r.consulCommandCh <- consul.NewCommand(consul.StartCommand, r.redisState)
-	r.redisCommandCh <- redis.NewCommand(redis.StartCommand, r.consulState)
+	r.consulCommand(consul.StartCommand)
+	r.redisCommand(redis.StartCommand)
 
 	// how frequenty to reconcile when redis/consul state changes
 	t := time.NewTicker(100 * time.Millisecond)
@@ -81,8 +89,8 @@ func (r *Reconciler) Run() {
 			// option is to step down as leader (if we are) and remove our Consul service
 			if r.isRedisUnhealthy() {
 				r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
-				r.consulCommandCh <- consul.NewCommand(consul.ReleaseLockCommand, r.redisState)
-				r.consulCommandCh <- consul.NewCommand(consul.DeregisterServiceCommand, r.redisState)
+				r.consulCommand(consul.ReleaseLockCommand)
+				r.consulCommand(consul.DeregisterServiceCommand)
 				continue
 			}
 
@@ -92,14 +100,14 @@ func (r *Reconciler) Run() {
 				// redis is already configured as master, so just update the consul check
 				if r.isRedisMaster() {
 					r.logger.Debug("We are already Consul Master and we run as Redis Master")
-					r.consulCommandCh <- consul.NewCommand(consul.UpdateServiceCommand, r.redisState)
+					r.consulCommand(consul.UpdateServiceCommand)
 					continue
 				}
 
 				// redis is not currently configured as master
 				r.logger.Info("Configure Redis as master")
-				r.redisCommandCh <- redis.NewCommand(redis.RunAsMasterCommand, r.consulState)
-				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
+				r.redisCommand(redis.RunAsMasterCommand)
+				r.consulCommand(consul.RegisterServiceCommand)
 				continue
 			}
 
@@ -116,14 +124,14 @@ func (r *Reconciler) Run() {
 				// TODO(jippi): consider replication lag
 				if r.isSlaveOfCurrentMaster() {
 					r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
-					r.consulCommandCh <- consul.NewCommand(consul.UpdateServiceCommand, r.redisState)
+					r.consulCommand(consul.UpdateServiceCommand)
 					continue
 				}
 
 				// is slave, but not slave of current master
 				r.logger.Info("Reconfigure Redis as slave")
-				r.redisCommandCh <- redis.NewCommand(redis.RunAsSlaveCommand, r.consulState)
-				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
+				r.redisCommand(redis.RunAsSlaveCommand)
+				r.consulCommand(consul.RegisterServiceCommand)
 				continue
 			}
 		}
@@ -252,10 +260,10 @@ func (r *Reconciler) stop() {
 	wg.Add(3)
 
 	r.logger.Debugf("Consul Cleanup started ")
-	r.consulCommandCh <- consul.NewCommand(consul.StopConsulCommand, r.redisState)
+	r.consulCommand(consul.StopConsulCommand)
 
 	r.logger.Debugf("Redis Cleanup started ")
-	r.redisCommandCh <- redis.NewCommand(redis.StopCommand, r.consulState)
+	r.redisCommand(redis.StopCommand)
 
 	// monitor cleanup process from state
 	go func() {

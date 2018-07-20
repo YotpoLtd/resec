@@ -9,6 +9,16 @@ type Redis struct {
 	Stopped           bool
 }
 
+// isRedisMaster return whether the Redis under management currently
+// see itself as a master instance or not
+func (r *Redis) IsRedisMaster() bool {
+	return r.Replication.Role == "master"
+}
+
+func (r *Redis) IsUnhealthy() bool {
+	return r.Connected == false
+}
+
 type RedisReplicationState struct {
 	Role       string // current redis role (master or slave)
 	MasterHost string // if slave, the master hostname its replicating from

@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YotpoLtd/resec/resec/consul"
+	"github.com/YotpoLtd/resec/resec/redis"
+	"github.com/YotpoLtd/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -16,17 +19,17 @@ var (
 // Reconsiler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
 type reconciler struct {
-	consulCommandCh   chan consulCommand // push updates to Consul manager
-	consulState       consulState        // last seen consul state
-	consulUpdateCh    chan consulState   // get updates from Consul manager
-	logger            *log.Entry         // reconciler logger
-	reconsileInterval time.Duration      // How often we should force reconsile
-	redisCommand      chan redisCommand  // push updates to Consul manager
-	redisState        redisState         // last seen redis state
-	redisUpdateCh     chan redisState    // get updates from Redis manager
-	shouldReconcile   bool               // Used to track if any state has been updated
-	signalCh          chan os.Signal     // signal channel (OS / signal shutdown)
-	stopCh            chan interface{}   // stop channel (internal shutdown)
+	consulCommandCh   chan consul.Command // push updates to Consul manager
+	consulState       state.Consul        // last seen consul state
+	consulUpdateCh    chan state.Consul   // get updates from Consul manager
+	logger            *log.Entry          // reconciler logger
+	reconsileInterval time.Duration       // How often we should force reconsile
+	redisCommand      chan redis.Command  // push updates to Consul manager
+	redisState        state.Redis         // last seen redis state
+	redisUpdateCh     chan state.Redis    // get updates from Redis manager
+	shouldReconcile   bool                // Used to track if any state has been updated
+	signalCh          chan os.Signal      // signal channel (OS / signal shutdown)
+	stopCh            chan interface{}    // stop channel (internal shutdown)
 }
 
 // Run starts the procedure
@@ -34,8 +37,8 @@ func (r *reconciler) run() {
 	r.logger = log.WithField("system", "reconsiler")
 
 	go r.stateReader()
-	r.consulCommandCh <- consulCommand{startConsulCommand, r.redisState}
-	r.redisCommand <- redisCommand{startRedisCommand, r.consulState}
+	r.consulCommandCh <- consul.NewCommand(consul.StartCommand, r.redisState)
+	r.redisCommand <- redis.NewCommand(redis.StartCommand, r.consulState)
 
 	// how frequenty to reconsile when redis/consul state changes
 	t := time.NewTicker(100 * time.Millisecond)
@@ -77,8 +80,8 @@ func (r *reconciler) run() {
 			// option is to step down as leader (if we are) and remove our Consul service
 			if r.isRedisUnhealthy() {
 				r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
-				r.consulCommandCh <- consulCommand{releaseLockCommand, r.redisState}
-				r.consulCommandCh <- consulCommand{deregisterServiceCommand, r.redisState}
+				r.consulCommandCh <- consul.NewCommand(consul.ReleaseLockCommand, r.redisState)
+				r.consulCommandCh <- consul.NewCommand(consul.DeregisterServiceCommand, r.redisState)
 				continue
 			}
 
@@ -88,14 +91,14 @@ func (r *reconciler) run() {
 				// redis is already configured as master, so just update the consul check
 				if r.isRedisMaster() {
 					r.logger.Debug("We are already Consul Master and we run as Redis Master")
-					r.consulCommandCh <- consulCommand{updateServiceCommand, r.redisState}
+					r.consulCommandCh <- consul.NewCommand(consul.UpdateServiceCommand, r.redisState)
 					continue
 				}
 
 				// redis is not currently configured as master
 				r.logger.Info("Configure Redis as master")
-				r.redisCommand <- redisCommand{runAsMaster, r.consulState}
-				r.consulCommandCh <- consulCommand{registerServiceCommand, r.redisState}
+				r.redisCommand <- redis.NewCommand(redis.RunAsMasterCommand, r.consulState)
+				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
 				continue
 			}
 
@@ -112,14 +115,14 @@ func (r *reconciler) run() {
 				// TODO(jippi): consider replication lag
 				if r.isSlaveOfCurrentMaster() {
 					r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
-					r.consulCommandCh <- consulCommand{updateServiceCommand, r.redisState}
+					r.consulCommandCh <- consul.NewCommand(consul.UpdateServiceCommand, r.redisState)
 					continue
 				}
 
 				// is slave, but not slave of current master
 				r.logger.Info("Reconfigure Redis as slave")
-				r.redisCommand <- redisCommand{runAsSlave, r.consulState}
-				r.consulCommandCh <- consulCommand{registerServiceCommand, r.redisState}
+				r.redisCommand <- redis.NewCommand(redis.RunAsSlaveCommand, r.consulState)
+				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
 				continue
 			}
 		}
@@ -170,46 +173,46 @@ func (r *reconciler) stateReader() {
 }
 
 func (r *reconciler) isConsulUnhealhy() bool {
-	return r.consulState.healthy == false
+	return r.consulState.Healthy == false
 }
 
 func (r *reconciler) isRedisUnhealthy() bool {
-	return r.redisState.connected == false
+	return r.redisState.Connected == false
 }
 
 // isConsulMaster return whether the Consul lock is held or not
 // if it's held, the Redis under management should become master
 func (r *reconciler) isConsulMaster() bool {
-	return r.consulState.lockIsHeld
+	return r.consulState.LockIsHeld
 }
 
 // isConsulSlave return whether the Consul lock is held or not
 // if its *not* hold, the Reids under management should become slave
 func (r *reconciler) isConsulSlave() bool {
-	return r.consulState.lockIsHeld == false
+	return r.consulState.LockIsHeld == false
 }
 
 // isRedisMaster return whether the Redis under management currently
 // see itself as a master instance or not
 func (r *reconciler) isRedisMaster() bool {
-	return r.redisState.replication.role == "master"
+	return r.redisState.Replication.Role == "master"
 }
 
 // noMasterElected return whether any Consul elected Redis master exist
 func (r *reconciler) noMasterElected() bool {
-	return r.consulState.masterAddr == "" && r.consulState.masterPort == 0
+	return r.consulState.MasterAddr == "" && r.consulState.MasterPort == 0
 }
 
 // missingInitialState return whether we got initial state from both Consul
 // and Redis, so we are able to start making decissions on the state of
 // the Redis under management
 func (r *reconciler) missingInitialState() bool {
-	if r.redisState.ready == false {
+	if r.redisState.Ready == false {
 		r.logger.Warn("Redis still missing initial state")
 		return true
 	}
 
-	if r.consulState.ready == false {
+	if r.consulState.Ready == false {
 		r.logger.Warn("Consul still missing initial state")
 		return true
 	}
@@ -228,14 +231,14 @@ func (r *reconciler) isSlaveOfCurrentMaster() bool {
 	}
 
 	// if the host don't match consul state, it's not slave (of the right node)
-	if r.redisState.replication.masterHost != r.consulState.masterAddr {
-		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.replication.masterHost, r.consulState.masterAddr)
+	if r.redisState.Replication.MasterHost != r.consulState.MasterAddr {
+		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.Replication.MasterHost, r.consulState.MasterAddr)
 		return false
 	}
 
 	// if the port don't match consul state, it's not slave (of the right node)
-	if r.redisState.replication.masterPort != r.consulState.masterPort {
-		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.replication.masterPort, r.consulState.masterPort)
+	if r.redisState.Replication.MasterPort != r.consulState.MasterPort {
+		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.Replication.MasterPort, r.consulState.MasterPort)
 		return false
 	}
 
@@ -248,10 +251,10 @@ func (r *reconciler) cleanup() {
 	wg.Add(2)
 
 	r.logger.Debugf("Consul Cleanup started ")
-	r.consulCommandCh <- consulCommand{stopConsulCommand, r.redisState}
+	r.consulCommandCh <- consul.NewCommand(consul.StopConsulCommand, r.redisState)
 
 	r.logger.Debugf("Redis Cleanup started ")
-	r.redisCommand <- redisCommand{stopRedisCommand, r.consulState}
+	r.redisCommand <- redis.NewCommand(redis.StopCommand, r.consulState)
 
 	wg.Wait()
 

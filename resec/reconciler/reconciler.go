@@ -19,27 +19,27 @@ var (
 // reconciler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
 type Reconciler struct {
+	consul            state.Consul          // Latest (cached) Consul state
 	consulCommandCh   chan<- consul.Command // Write-only channel to request Consul actions to be taken
-	consulState       state.Consul          // Latest (cached) Consul state
 	consulStateCh     <-chan state.Consul   // Read-only channel to get Consul state updates
 	logger            *log.Entry            // reconciler logger
 	reconcileInterval time.Duration         // How often we should force reconcile
+	redis             state.Redis           // Latest (cached) Redis state
 	redisCommandCh    chan<- redis.Command  // Write-only channel to request Redis actions to be taken
-	redisState        state.Redis           // Latest (cached) Redis state
 	redisStateCh      <-chan state.Redis    // Read-only channel to get Redis state updates
-	shouldReconcile   bool                  // Used to track if any state has been updated
+	reconcile         bool                  // Used to track if any state has been updated
 	signalCh          chan os.Signal        // signal channel (OS / signal shutdown)
 	stopCh            chan interface{}      // stop channel (internal shutdown)
 }
 
 // sendRedisCommand will build and send a Redis command
 func (r *Reconciler) sendRedisCommand(cmd redis.CommandName) {
-	r.redisCommandCh <- redis.NewCommand(cmd, r.consulState)
+	r.redisCommandCh <- redis.NewCommand(cmd, r.consul)
 }
 
 // sendConsulCommand will build and send a Consul command
 func (r *Reconciler) sendConsulCommand(cmd consul.CommandName) {
-	r.consulCommandCh <- consul.NewCommand(cmd, r.redisState)
+	r.consulCommandCh <- consul.NewCommand(cmd, r.redis)
 }
 
 // Run starts the procedure
@@ -69,10 +69,10 @@ func (r *Reconciler) Run() {
 
 		case <-t.C:
 			// No new state since last, doing nothing
-			if r.shouldReconcile == false {
+			if r.reconcile == false {
 				continue
 			}
-			r.shouldReconcile = false
+			r.reconcile = false
 
 			// do we have the initial state to start reconciliation
 			if r.missingInitialState() {
@@ -82,14 +82,14 @@ func (r *Reconciler) Run() {
 
 			// If Consul is not healthy, we can't make changes to the topology, as
 			// we are unable to update the Consul catalog
-			if r.consulState.IsUnhealhy() {
+			if r.consul.IsUnhealhy() {
 				r.logger.Debugf("Can't reconcile, Consul is not healthy")
 				continue
 			}
 
 			// If Redis is not healthy, we can't re-configure Redis if need be, so the only
 			// option is to step down as leader (if we are) and remove our Consul service
-			if r.redisState.IsUnhealthy() {
+			if r.redis.IsUnhealthy() {
 				r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
 				r.sendConsulCommand(consul.ReleaseLockCommand)
 				r.sendConsulCommand(consul.DeregisterServiceCommand)
@@ -97,10 +97,10 @@ func (r *Reconciler) Run() {
 			}
 
 			// if the Consul Lock is held (aka this instance should be master)
-			if r.consulState.IsMaster() {
+			if r.consul.IsMaster() {
 
 				// redis is already configured as master, so just update the consul check
-				if r.redisState.IsRedisMaster() {
+				if r.redis.IsRedisMaster() {
 					r.logger.Debug("We are already Consul Master and we run as Redis Master")
 					r.sendConsulCommand(consul.UpdateServiceCommand)
 					continue
@@ -114,10 +114,10 @@ func (r *Reconciler) Run() {
 			}
 
 			// if the consul lock is *not* held (aka this instance should be slave)
-			if r.consulState.IsSlave() {
+			if r.consul.IsSlave() {
 
 				// can't enslave if there are no known master redis in consul catalog
-				if r.consulState.NoMasterElected() {
+				if r.consul.NoMasterElected() {
 					r.logger.Warn("Currently no master Redis is elected in Consul catalog, can't enslave local Redis")
 					continue
 				}
@@ -153,7 +153,7 @@ func (r *Reconciler) stateReader() {
 
 		// we fake state change to ensure we reconcile periodically
 		case <-f.C:
-			r.shouldReconcile = true
+			r.reconcile = true
 			f.Reset(r.reconcileInterval)
 
 		// New redis state change
@@ -164,8 +164,8 @@ func (r *Reconciler) stateReader() {
 			}
 
 			r.logger.Debug("New Redis state")
-			r.redisState = redis
-			r.shouldReconcile = true
+			r.redis = redis
+			r.reconcile = true
 			f.Reset(r.reconcileInterval)
 
 		// New Consul state change
@@ -176,8 +176,8 @@ func (r *Reconciler) stateReader() {
 			}
 
 			r.logger.Debug("New Consul state")
-			r.consulState = consul
-			r.shouldReconcile = true
+			r.consul = consul
+			r.reconcile = true
 			f.Reset(r.reconcileInterval)
 		}
 	}
@@ -187,12 +187,12 @@ func (r *Reconciler) stateReader() {
 // and Redis, so we are able to start making decissions on the state of
 // the Redis under management
 func (r *Reconciler) missingInitialState() bool {
-	if r.redisState.Ready == false {
+	if r.redis.Ready == false {
 		r.logger.Warn("Redis still missing initial state")
 		return true
 	}
 
-	if r.consulState.Ready == false {
+	if r.consul.Ready == false {
 		r.logger.Warn("Consul still missing initial state")
 		return true
 	}
@@ -205,20 +205,20 @@ func (r *Reconciler) missingInitialState() bool {
 func (r *Reconciler) isSlaveOfCurrentMaster() bool {
 	logger := r.logger.WithField("check", "isSlaveOfCurrentMaster")
 	// if Redis thing its master, it can't be a slave of another node
-	if r.redisState.IsRedisMaster() {
+	if r.redis.IsRedisMaster() {
 		logger.Debugf("isRedismaster() == true")
 		return false
 	}
 
 	// if the host don't match consul state, it's not slave (of the right node)
-	if r.redisState.Replication.MasterHost != r.consulState.MasterAddr {
-		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.Replication.MasterHost, r.consulState.MasterAddr)
+	if r.redis.Replication.MasterHost != r.consul.MasterAddr {
+		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redis.Replication.MasterHost, r.consul.MasterAddr)
 		return false
 	}
 
 	// if the port don't match consul state, it's not slave (of the right node)
-	if r.redisState.Replication.MasterPort != r.consulState.MasterPort {
-		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.Replication.MasterPort, r.consulState.MasterPort)
+	if r.redis.Replication.MasterPort != r.consul.MasterPort {
+		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redis.Replication.MasterPort, r.consul.MasterPort)
 		return false
 	}
 
@@ -242,12 +242,12 @@ func (r *Reconciler) stop() {
 		consulStopped := false
 
 		for {
-			if r.redisState.Stopped && redisStopped == false {
+			if r.redis.Stopped && redisStopped == false {
 				redisStopped = true
 				wg.Done()
 			}
 
-			if r.consulState.Stopped && consulStopped == false {
+			if r.consul.Stopped && consulStopped == false {
 				consulStopped = true
 				wg.Done()
 			}

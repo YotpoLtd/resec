@@ -18,6 +18,10 @@ type Command struct {
 	redisState state.Redis
 }
 
+func (c *Command) Name() string {
+	return string(c.name)
+}
+
 func NewCommand(cmd CommandName, redisState state.Redis) Command {
 	return Command{
 		name:       cmd,

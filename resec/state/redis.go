@@ -1,20 +1,12 @@
 package state
 
-// Consul state used by the reconciler to decide what actions to take
-type Consul struct {
-	Ready      bool
-	Healthy    bool
-	LockIsHeld bool
-	MasterAddr string
-	MasterPort int
-}
-
 // Redis state represent the full state of the connection with Redis
 type Redis struct {
 	Connected         bool                  // are we able to connect to Redis?
 	Ready             bool                  // are we ready to provide state for the reconciler?
 	Replication       RedisReplicationState // current replication data
 	ReplicationString string                // raw replication info
+	Stopped           bool
 }
 
 type RedisReplicationState struct {

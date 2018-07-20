@@ -29,6 +29,9 @@ func (cc *Connection) cleanup() {
 
 	cc.logger.Debug("Closing stopCh")
 	close(cc.stopCh)
+
+	cc.state.Stopped = true
+	cc.emit()
 }
 
 // continuouslyAcquireConsulLeadership waits to acquire the lock to the Consul KV key.

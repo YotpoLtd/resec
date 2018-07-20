@@ -24,7 +24,7 @@ type Reconciler struct {
 	consulUpdateCh    chan state.Consul   // get updates from Consul manager
 	logger            *log.Entry          // reconciler logger
 	reconsileInterval time.Duration       // How often we should force reconsile
-	redisCommand      chan redis.Command  // push updates to Consul manager
+	redisCommandCh    chan redis.Command  // push updates to Consul manager
 	redisState        state.Redis         // last seen redis state
 	redisUpdateCh     chan state.Redis    // get updates from Redis manager
 	shouldReconcile   bool                // Used to track if any state has been updated
@@ -37,8 +37,9 @@ func (r *Reconciler) Run() {
 	r.logger = log.WithField("system", "reconsiler")
 
 	go r.stateReader()
+
 	r.consulCommandCh <- consul.NewCommand(consul.StartCommand, r.redisState)
-	r.redisCommand <- redis.NewCommand(redis.StartCommand, r.consulState)
+	r.redisCommandCh <- redis.NewCommand(redis.StartCommand, r.consulState)
 
 	// how frequenty to reconsile when redis/consul state changes
 	t := time.NewTicker(100 * time.Millisecond)
@@ -49,7 +50,7 @@ func (r *Reconciler) Run() {
 		case <-r.signalCh:
 			fmt.Println("")
 			r.logger.Info("Caught signal, stopping worker loop")
-			go r.cleanup()
+			go r.stop()
 
 		// stop the infinite loop
 		case <-r.stopCh:
@@ -97,7 +98,7 @@ func (r *Reconciler) Run() {
 
 				// redis is not currently configured as master
 				r.logger.Info("Configure Redis as master")
-				r.redisCommand <- redis.NewCommand(redis.RunAsMasterCommand, r.consulState)
+				r.redisCommandCh <- redis.NewCommand(redis.RunAsMasterCommand, r.consulState)
 				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
 				continue
 			}
@@ -121,7 +122,7 @@ func (r *Reconciler) Run() {
 
 				// is slave, but not slave of current master
 				r.logger.Info("Reconfigure Redis as slave")
-				r.redisCommand <- redis.NewCommand(redis.RunAsSlaveCommand, r.consulState)
+				r.redisCommandCh <- redis.NewCommand(redis.RunAsSlaveCommand, r.consulState)
 				r.consulCommandCh <- consul.NewCommand(consul.RegisterServiceCommand, r.redisState)
 				continue
 			}
@@ -130,7 +131,7 @@ func (r *Reconciler) Run() {
 }
 
 func (r *Reconciler) stateReader() {
-	// how long to wait between forced renconsile (e.g. to keep TTL happy)
+	// how long to wait between forced renconcile (e.g. to keep TTL happy)
 	f := time.NewTimer(r.reconsileInterval)
 
 	for {
@@ -246,18 +247,41 @@ func (r *Reconciler) isSlaveOfCurrentMaster() bool {
 	return true
 }
 
-// cleanup will ensure consul and redis will gracefully shutdown
-func (r *Reconciler) cleanup() {
-	wg.Add(2)
+// stop will ensure consul and redis will gracefully stop
+func (r *Reconciler) stop() {
+	wg.Add(3)
 
 	r.logger.Debugf("Consul Cleanup started ")
 	r.consulCommandCh <- consul.NewCommand(consul.StopConsulCommand, r.redisState)
 
 	r.logger.Debugf("Redis Cleanup started ")
-	r.redisCommand <- redis.NewCommand(redis.StopCommand, r.consulState)
+	r.redisCommandCh <- redis.NewCommand(redis.StopCommand, r.consulState)
+
+	// monitor cleanup process from state
+	go func() {
+		redisStopped := false
+		consulStopped := false
+
+		for {
+			if r.redisState.Stopped && redisStopped == false {
+				redisStopped = true
+				wg.Done()
+			}
+
+			if r.consulState.Stopped && consulStopped == false {
+				consulStopped = true
+				wg.Done()
+			}
+
+			if redisStopped && consulStopped {
+				wg.Done()
+				return
+			}
+		}
+	}()
 
 	wg.Wait()
 
-	r.logger.Debugf("Cleanup finished ")
+	r.logger.Debugf("Cleanup completed")
 	close(r.stopCh)
 }

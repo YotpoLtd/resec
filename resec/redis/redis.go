@@ -41,6 +41,9 @@ func (rc *Connection) runAsSlave(masterAddress string, masterPort int) error {
 
 func (rc *Connection) cleanup() {
 	close(rc.stopCh)
+
+	rc.state.Stopped = true
+	rc.emit()
 }
 
 func (rc *Connection) start() {

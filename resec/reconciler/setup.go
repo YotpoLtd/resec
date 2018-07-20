@@ -26,7 +26,7 @@ func Setup(c *cli.Context) (*Reconciler, error) {
 		consulCommandCh:   consulConnection.CommandCh,
 		consulUpdateCh:    consulConnection.StateCh,
 		reconsileInterval: c.Duration("healthcheck-timeout"),
-		redisCommand:      redisConnection.CommandCh,
+		redisCommandCh:    redisConnection.CommandCh,
 		redisUpdateCh:     redisConnection.StateCh,
 		signalCh:          make(chan os.Signal, 1),
 		stopCh:            make(chan interface{}, 1),

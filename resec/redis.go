@@ -84,7 +84,6 @@ func (rc *redisConnection) runAsSlave(masterAddress string, masterPort int) erro
 
 func (rc *redisConnection) start() {
 	go rc.watchReplicationStatus()
-	// go rc.watchServerStatus()
 	rc.waitForRedisToBeReady()
 }
 
@@ -111,15 +110,19 @@ func (rc *redisConnection) watchReplicationStatus() {
 			rc.emit()
 		}
 
-		kvPair := parseKeyValue(result)
+		kvPair := rc.parseKeyValue(result)
 
-		replicationState := redisReplicationState{}
-		replicationState.role = kvPair["role"]
+		// Create new replication state
+		replicationState := redisReplicationState{
+			role: kvPair["role"],
+		}
 
+		// Add master_host to state (if set) - only available for slaves
 		if masterHost, ok := kvPair["master_host"]; ok {
 			replicationState.masterHost = masterHost
 		}
 
+		// Add master_port to state (if set) - only available for slaves
 		if masterPortString, ok := kvPair["master_port"]; ok {
 			masterPort, err := strconv.Atoi(masterPortString)
 			if err == nil {
@@ -127,61 +130,15 @@ func (rc *redisConnection) watchReplicationStatus() {
 			}
 		}
 
+		// compare current and new state, if no changes, don't publish
+		// a new state to the reconciler
 		if replicationState.changed(rc.state.replication) == false {
-			// rc.logger.Debugf("Redis replication state did not change")
 			continue
 		}
 
 		rc.state.replication = replicationState
 		rc.state.replicationString = result
 		rc.emit()
-	}
-}
-
-// watchServerStatus checks redis server uptime
-func (rc *redisConnection) watchServerStatus() {
-	lastUptime := 0
-	connectionErrors := 0
-	allowedConnectionErrors := 3
-
-	ticker := time.NewTicker(time.Second)
-	for ; true; <-ticker.C {
-		rc.logger.Debug("Checking redis server info")
-
-		result, err := rc.client.Info("server").Result()
-		if err != nil {
-			rc.logger.Warnf("Could not query for server info: %s", err)
-			connectionErrors++
-
-			if connectionErrors > allowedConnectionErrors {
-				rc.logger.Error("Too many connection errors, shutting down")
-				// TODO: trigger event to stop
-			}
-
-			continue
-		}
-		connectionErrors = 0
-
-		parsed := parseKeyValue(result)
-		uptimeString, ok := parsed["uptime_in_seconds"]
-		if !ok {
-			rc.logger.Error("Could not find 'uptime_in_seconds' in server info respone")
-			continue
-		}
-
-		uptime, err := strconv.Atoi(uptimeString)
-		if err != nil {
-			rc.logger.Error("Could not parse 'uptime_in_seconds' to integer")
-			continue
-		}
-
-		if uptime < lastUptime {
-			rc.logger.Errorf("Current uptime (%d) is less than previous (%d) - Redis likely restarted - stopping resec", uptime, lastUptime)
-			// TODO: trigger event to stop
-			continue
-		}
-
-		lastUptime = uptime
 	}
 }
 
@@ -201,7 +158,7 @@ func (rc *redisConnection) waitForRedisToBeReady() {
 	}
 }
 
-func parseKeyValue(str string) map[string]string {
+func (rc *redisConnection) parseKeyValue(str string) map[string]string {
 	res := make(map[string]string)
 
 	lines := strings.Split(str, "\r\n")

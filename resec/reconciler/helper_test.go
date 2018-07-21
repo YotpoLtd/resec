@@ -70,7 +70,7 @@ func (h *helper) expectConsulCommands(commands ...consul.CommandName) *helper {
 
 // eval will trigger a reconsiler evaluation and assert the result matches the
 // configured expectations (expectRedisCommands / expectConsulCommands)
-func (h *helper) eval(expectedResult Result) {
+func (h *helper) eval(expectedResult resultType) {
 	h.reconciler.reconcile = true
 	actualResult := h.reconciler.evaluate()
 

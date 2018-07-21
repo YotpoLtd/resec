@@ -17,18 +17,18 @@ var (
 )
 
 const (
-	ResultSkip             = Result("skip")
-	ResultMissingState     = Result("missing_state")
-	ResultConsulNotHealthy = Result("consul_not_healthy")
-	ResultRedisNotHealthy  = Result("redis_not_healthy")
-	ResultUpdateService    = Result("consul_update_service")
-	ResultRunAsMaster      = Result("run_as_master")
-	ResultRunAsSlave       = Result("run_as_slave")
-	ResultNoMasterElected  = Result("no_master_elected")
-	ResultUnknown          = Result("unknown")
+	ResultSkip             = resultType("skip")
+	ResultMissingState     = resultType("missing_state")
+	ResultConsulNotHealthy = resultType("consul_not_healthy")
+	ResultRedisNotHealthy  = resultType("redis_not_healthy")
+	ResultUpdateService    = resultType("consul_update_service")
+	ResultRunAsMaster      = resultType("run_as_master")
+	ResultRunAsSlave       = resultType("run_as_slave")
+	ResultNoMasterElected  = resultType("no_master_elected")
+	ResultUnknown          = resultType("unknown")
 )
 
-type Result string
+type resultType string
 
 // reconciler will take a stream of changes happening to
 // consul and redis and decide what actions that should be taken
@@ -88,7 +88,7 @@ func (r *Reconciler) Run() {
 	}
 }
 
-func (r *Reconciler) evaluate() Result {
+func (r *Reconciler) evaluate() resultType {
 	// No new state since last, doing nothing
 	if r.reconcile == false {
 		return ResultSkip

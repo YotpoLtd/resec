@@ -90,10 +90,11 @@ func NewConnection(c *cli.Context, redisConfig redis.Config) (*Manager, error) {
 		},
 	}
 
-	instance.client, err = consulapi.NewClient(instance.clientConfig)
+	consulClient, err := consulapi.NewClient(instance.clientConfig)
 	if err != nil {
 		return nil, err
 	}
+	instance.client = &liveClient{consulClient}
 
 	return instance, nil
 }

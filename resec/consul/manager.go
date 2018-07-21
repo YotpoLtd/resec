@@ -216,7 +216,7 @@ func (m *Manager) registerService(redisState state.Redis) {
 
 	m.logger.Infof("Registering %s service in consul", serviceInfo.Name)
 
-	err := m.client.Agent().ServiceRegister(serviceInfo)
+	err := m.client.ServiceRegister(serviceInfo)
 	m.handleConsulError(err)
 	if err != nil {
 		return
@@ -235,14 +235,14 @@ func (m *Manager) registerService(redisState state.Redis) {
 		},
 	}
 
-	err = m.client.Agent().CheckRegister(check)
+	err = m.client.CheckRegister(check)
 	m.handleConsulError(err)
 }
 
 // deregisterService will deregister the consul service from Consul catalog
 func (m *Manager) deregisterService() {
 	if m.state.Healthy && m.config.serviceID != "" {
-		err := m.client.Agent().ServiceDeregister(m.config.serviceID)
+		err := m.client.ServiceDeregister(m.config.serviceID)
 		m.handleConsulError(err)
 	}
 
@@ -257,7 +257,7 @@ func (m *Manager) setConsulCheckStatus(redisState state.Redis) {
 	}
 
 	m.logger.Debug("Updating Check TTL for service")
-	err := m.client.Agent().UpdateTTL(m.config.checkID, redisState.ReplicationString, "passing")
+	err := m.client.UpdateTTL(m.config.checkID, redisState.ReplicationString, "passing")
 	m.handleConsulError(err)
 }
 
@@ -294,7 +294,7 @@ func (m *Manager) watchConsulMasterService() {
 			return
 
 		case <-timer.C:
-			services, meta, err := m.client.Health().Service(serviceName, serviceTag, true, q)
+			services, meta, err := m.client.ServiceHealth(serviceName, serviceTag, true, q)
 			m.handleConsulError(err)
 			if err != nil {
 				timer.Reset(m.backoff.ForAttempt(m.backoff.Attempt()))
@@ -362,7 +362,6 @@ func (m *Manager) handleConsulError(err error) {
 		m.emit()
 
 		m.deregisterService()
-
 	}
 
 	// if the check don't have a TTL, it mean that the service + check is gone

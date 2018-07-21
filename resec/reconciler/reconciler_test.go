@@ -26,7 +26,7 @@ func TestReconciler_RunBecomeMaster(t *testing.T) {
 
 	// redis updated state, connected but no known replication status
 	helper.
-		withRedisState(state.Redis{Ready: true, Connected: true}).
+		withRedisState(state.Redis{Ready: true, Healthy: true}).
 		eval(ResultNoMasterElected)
 
 	// consul updated state, we know hold the master lock, so configure redis to become master
@@ -38,7 +38,7 @@ func TestReconciler_RunBecomeMaster(t *testing.T) {
 
 	// redis updated state, its now running as a master node, so all we need to do is update the service
 	helper.
-		withRedisState(state.Redis{Ready: true, Connected: true, Replication: state.RedisReplicationState{Role: "master"}}).
+		withRedisState(state.Redis{Ready: true, Healthy: true, Replication: state.RedisReplicationState{Role: "master"}}).
 		expectConsulCommands(consul.UpdateServiceCommand).
 		eval(ResultUpdateService)
 
@@ -56,7 +56,7 @@ func TestReconciler_UnhealthyConsul(t *testing.T) {
 	// with local Redis healthy, and local Consul unhealthy,
 	// the reconsiler should not do any work at all
 	helper.
-		withRedisState(state.Redis{Ready: true, Connected: true}).
+		withRedisState(state.Redis{Ready: true, Healthy: true}).
 		withConsulState(state.Consul{Ready: true, Healthy: false}).
 		eval(ResultConsulNotHealthy)
 }
@@ -70,7 +70,7 @@ func TestReconciler_UnhealthyRedis(t *testing.T) {
 	// the reconsiler should give up the consul lock (if held) and deregister the service
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true}).
-		withRedisState(state.Redis{Ready: true, Connected: false}).
+		withRedisState(state.Redis{Ready: true, Healthy: false}).
 		expectConsulCommands(consul.ReleaseLockCommand, consul.DeregisterServiceCommand).
 		eval(ResultRedisNotHealthy)
 }
@@ -84,7 +84,7 @@ func TestReconciler_SlaveNoMasterElected(t *testing.T) {
 	// the reconsiler should do no work
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true}).
-		withRedisState(state.Redis{Ready: true, Connected: true}).
+		withRedisState(state.Redis{Ready: true, Healthy: true}).
 		eval(ResultNoMasterElected)
 }
 
@@ -97,7 +97,7 @@ func TestReconciler_SlaveMasterElected(t *testing.T) {
 	// and a remote Consul master, local redis should be enslaved to the remote master
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true, MasterAddr: "127.0.0.1", MasterPort: 6379}).
-		withRedisState(state.Redis{Ready: true, Connected: true}).
+		withRedisState(state.Redis{Ready: true, Healthy: true}).
 		expectConsulCommands(consul.RegisterServiceCommand).
 		expectRedisCommands(redis.RunAsSlaveCommand).
 		eval(ResultRunAsSlave)
@@ -113,7 +113,7 @@ func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
 	// the reconsiler should only update the Consul service
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true, MasterAddr: "127.0.0.1", MasterPort: 6379}).
-		withRedisState(state.Redis{Ready: true, Connected: true, Replication: state.RedisReplicationState{MasterHost: "127.0.0.1", MasterPort: 6379}}).
+		withRedisState(state.Redis{Ready: true, Healthy: true, Replication: state.RedisReplicationState{MasterHost: "127.0.0.1", MasterPort: 6379}}).
 		expectConsulCommands(consul.UpdateServiceCommand).
 		eval(ResultUpdateService)
 }

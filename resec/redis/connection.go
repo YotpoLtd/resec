@@ -84,7 +84,7 @@ func (c *Connection) watchReplicationStatus() {
 		result, err := c.client.Info("replication").Result()
 		// any failure will trigger a disconnect event
 		if err != nil {
-			c.state.Connected = false
+			c.state.Healthy = false
 			c.emit()
 
 			c.logger.Errorf("Can't connect to redis: %+v", err)
@@ -92,8 +92,8 @@ func (c *Connection) watchReplicationStatus() {
 		}
 
 		// if we previously was disconnected, but now succeded again, emit a (re)connected event
-		if c.state.Connected == false {
-			c.state.Connected = true
+		if c.state.Healthy == false {
+			c.state.Healthy = true
 			c.emit()
 		}
 

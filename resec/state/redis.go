@@ -2,7 +2,7 @@ package state
 
 // Redis state represent the full state of the connection with Redis
 type Redis struct {
-	Connected         bool                  // are we able to connect to Redis?
+	Healthy           bool                  // are we able to connect to Redis?
 	Ready             bool                  // are we ready to provide state for the reconciler?
 	Replication       RedisReplicationState // current replication data
 	ReplicationString string                // raw replication info
@@ -16,7 +16,7 @@ func (r *Redis) IsRedisMaster() bool {
 }
 
 func (r *Redis) IsUnhealthy() bool {
-	return r.Connected == false
+	return r.Healthy == false
 }
 
 type RedisReplicationState struct {

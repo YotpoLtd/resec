@@ -116,7 +116,7 @@ func main() {
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {
-		r, err := reconciler.Setup(c)
+		r, err := reconciler.NewReconciler(c)
 		if err != nil {
 			return err
 		}

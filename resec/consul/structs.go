@@ -9,7 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Connection struct {
+type Manager struct {
 	backoff      *backoff.Backoff  // exponential backoff helper
 	client       *consulapi.Client // consul API client
 	clientConfig *consulapi.Config // consul API client configuration

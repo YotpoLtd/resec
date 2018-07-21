@@ -6,16 +6,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Connection struct {
+type Manager struct {
 	logger    *log.Entry       // logging specificall for Redis
 	client    *redis.Client    // redis client
-	config    *RedisConfig     // redis config
+	config    *Config          // redis config
 	state     *state.Redis     // redis state
 	stateCh   chan state.Redis // redis state channel to publish updates to the reconciler
 	commandCh chan Command
 	stopCh    chan interface{}
 }
 
-type RedisConfig struct {
+type Config struct {
 	Address string // address (IP+Port) used to talk to Redis
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // setup returns the default configuration for the ReSeC
-func Setup(c *cli.Context) (*Reconciler, error) {
+func NewReconciler(c *cli.Context) (*Reconciler, error) {
 	redisConnection, err := redis.NewConnection(c)
 	if err != nil {
 		return nil, err
@@ -24,8 +24,8 @@ func Setup(c *cli.Context) (*Reconciler, error) {
 	}
 
 	reconsiler := &Reconciler{
-		consulCommandCh:        consulConnection.CommandChWriter(),
-		consulStateCh:          consulConnection.StateChReader(),
+		consulCommandCh:        consulConnection.GetCommandWriter(),
+		consulStateCh:          consulConnection.GetStateReader(),
 		forceReconcileInterval: c.Duration("healthcheck-timeout"),
 		reconcileInterval:      100 * time.Millisecond,
 		redisCommandCh:         redisConnection.CommandChWriter(),

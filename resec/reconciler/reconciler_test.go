@@ -53,8 +53,8 @@ func TestReconciler_UnhealthyConsul(t *testing.T) {
 	helper.consume()
 	defer helper.stop()
 
-	// with redis healthy, and consul unhealthy, the reconsiler should not
-	// do any work at all
+	// with local Redis healthy, and local Consul unhealthy,
+	// the reconsiler should not do any work at all
 	helper.
 		withRedisState(state.Redis{Ready: true, Connected: true}).
 		withConsulState(state.Consul{Ready: true, Healthy: false}).
@@ -66,8 +66,8 @@ func TestReconciler_UnhealthyRedis(t *testing.T) {
 	helper.consume()
 	defer helper.stop()
 
-	// with consul healthy, and redis unhealthy, the reconsiler should
-	// give up the consul lock (if held) and deregister the service)
+	// with local Consul healthy, and local Redis unhealthy,
+	// the reconsiler should give up the consul lock (if held) and deregister the service
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true}).
 		withRedisState(state.Redis{Ready: true, Connected: false}).
@@ -80,7 +80,7 @@ func TestReconciler_SlaveNoMasterElected(t *testing.T) {
 	helper.consume()
 	defer helper.stop()
 
-	// with Consul and Redis healthy, but no elected Consul master
+	// with local Consul and local Redis healthy, but no cluster elected Consul master
 	// the reconsiler should do no work
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true}).
@@ -93,8 +93,8 @@ func TestReconciler_SlaveMasterElected(t *testing.T) {
 	helper.consume()
 	defer helper.stop()
 
-	// with Consul and Redis healthy, but no elected Consul master
-	// and a known Consul master, the redis should be enslaved
+	// with local Consul and Redis healthy but not elected Consul master
+	// and a remote Consul master, local redis should be enslaved to the remote master
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true, MasterAddr: "127.0.0.1", MasterPort: 6379}).
 		withRedisState(state.Redis{Ready: true, Connected: true}).
@@ -108,9 +108,9 @@ func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
 	helper.consume()
 	defer helper.stop()
 
-	// with Consul and Redis healthy, but no elected Consul master
-	// and a known Consul master, which Redis is already following
-	// the reconsiler should just update the Consul service
+	// with local Consul and Redis healthy, but not elected Consul master
+	// and a remote Consul master, which Redis is already enslaved to
+	// the reconsiler should only update the Consul service
 	helper.
 		withConsulState(state.Consul{Ready: true, Healthy: true, MasterAddr: "127.0.0.1", MasterPort: 6379}).
 		withRedisState(state.Redis{Ready: true, Connected: true, Replication: state.RedisReplicationState{MasterHost: "127.0.0.1", MasterPort: 6379}}).

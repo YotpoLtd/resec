@@ -72,7 +72,7 @@ func (c *Connection) continuouslyAcquireConsulLeadership() {
 // redis Master node
 func (c *Connection) acquireConsulLeadership() {
 	// if we already hold the lock, we can't acquire it again
-	if c.state.LockIsHeld {
+	if c.state.Master {
 		c.logger.Debug("We already hold the lock, can't acquire it again")
 		return
 	}
@@ -103,7 +103,7 @@ func (c *Connection) acquireConsulLeadership() {
 
 	c.logger.Info("Lock successfully acquired")
 
-	c.state.LockIsHeld = true
+	c.state.Master = true
 	c.emit()
 
 	//
@@ -123,7 +123,7 @@ func (c *Connection) acquireConsulLeadership() {
 			c.logger.Info("Consul Lock successfully released")
 		}
 
-		c.state.LockIsHeld = false
+		c.state.Master = false
 		c.emit()
 	}()
 
@@ -155,7 +155,7 @@ func (c *Connection) acquireConsulLeadership() {
 
 // releaseConsulLock stops consul lock handler")
 func (c *Connection) releaseConsulLock() {
-	if c.state.LockIsHeld == false {
+	if c.state.Master == false {
 		c.logger.Debug("Can't release Consul lock, we don't have it")
 		return
 	}
@@ -167,7 +167,7 @@ func (c *Connection) releaseConsulLock() {
 // getReplicationStatus will return current replication status
 // the default value is 'slave' - only if we hold the lock will 'master' be returned
 func (c *Connection) getReplicationStatus() string {
-	if c.state.LockIsHeld {
+	if c.state.Master {
 		return "master"
 	}
 

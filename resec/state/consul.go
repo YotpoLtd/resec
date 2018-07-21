@@ -4,7 +4,7 @@ package state
 type Consul struct {
 	Ready      bool
 	Healthy    bool
-	LockIsHeld bool
+	Master     bool
 	MasterAddr string
 	MasterPort int
 	Stopped    bool
@@ -22,11 +22,11 @@ func (c *Consul) IsUnhealhy() bool {
 // isConsulMaster return whether the Consul lock is held or not
 // if it's held, the Redis under management should become master
 func (c *Consul) IsMaster() bool {
-	return c.LockIsHeld
+	return c.Master
 }
 
 // isConsulSlave return whether the Consul lock is held or not
 // if its *not* hold, the Reids under management should become slave
 func (c *Consul) IsSlave() bool {
-	return c.LockIsHeld == false
+	return c.Master == false
 }

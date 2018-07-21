@@ -11,7 +11,7 @@ import (
 
 type Manager struct {
 	backoff      *backoff.Backoff  // exponential backoff helper
-	client       client            // consul API client
+	client       consulClient      // consul API client
 	clientConfig *consulapi.Config // consul API client configuration
 	config       *config           // configuration for this connection
 	lockCh       <-chan struct{}   // lock channel used by Consul SDK to notify about changes

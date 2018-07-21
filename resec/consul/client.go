@@ -4,7 +4,8 @@ import (
 	consulapi "github.com/hashicorp/consul/api"
 )
 
-type client interface {
+// interface all consul client need to satify
+type consulClient interface {
 	LockOpts(opts *consulapi.LockOptions) (*consulapi.Lock, error)
 	ServiceRegister(service *consulapi.AgentServiceRegistration) error
 	CheckRegister(check *consulapi.AgentCheckRegistration) error
@@ -13,6 +14,7 @@ type client interface {
 	ServiceHealth(service, tag string, passingOnly bool, q *consulapi.QueryOptions) ([]*consulapi.ServiceEntry, *consulapi.QueryMeta, error)
 }
 
+// live client operates on a real consul Client, talking to Consul API directly
 type liveClient struct {
 	client *consulapi.Client
 }

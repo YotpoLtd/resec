@@ -152,9 +152,6 @@ func TestReconciler_SlaveMasterElected(t *testing.T) {
 			Ready:   true,
 			Healthy: true,
 		}).
-		expectConsulCommands(
-			consul.RegisterServiceCommand,
-		).
 		expectRedisCommands(
 			redis.RunAsSlaveCommand,
 		).

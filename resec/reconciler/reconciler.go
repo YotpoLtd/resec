@@ -143,19 +143,19 @@ func (r *Reconciler) evaluate() resultType {
 			return ResultNoMasterElected
 		}
 
-		// is slave, and following the current master
-		// TODO(jippi): consider replication lag
-		if r.isSlaveOfCurrentMaster() {
-			r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
-			r.sendConsulCommand(consul.UpdateServiceCommand)
-			return ResultUpdateService
+		// is not following the current Redis master
+		if r.notSlaveOfCurrentMaster() {
+			r.logger.Info("Reconfigure Redis as slave")
+			r.sendRedisCommand(redis.RunAsSlaveCommand)
+			return ResultRunAsSlave
 		}
 
-		// is slave, but not slave of current master
-		r.logger.Info("Reconfigure Redis as slave")
-		r.sendRedisCommand(redis.RunAsSlaveCommand)
-		r.sendConsulCommand(consul.RegisterServiceCommand)
-		return ResultRunAsSlave
+		// TODO: consider replication lag
+
+		// everything is fine, update service ttl
+		r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
+		r.sendConsulCommand(consul.UpdateServiceCommand)
+		return ResultUpdateService
 	}
 
 	return ResultUnknown
@@ -221,30 +221,30 @@ func (r *Reconciler) missingInitialState() bool {
 	return false
 }
 
-// isSlaveOfCurrentMaster return wheter the Redis under management currently
+// notSlaveOfCurrentMaster return wheter the Redis under management currently
 // are configured to be slave of the currently elected master Redis
-func (r *Reconciler) isSlaveOfCurrentMaster() bool {
+func (r *Reconciler) notSlaveOfCurrentMaster() bool {
 	logger := r.logger.WithField("check", "isSlaveOfCurrentMaster")
 	// if Redis thing its master, it can't be a slave of another node
 	if r.redisState.IsRedisMaster() {
 		logger.Debugf("isRedismaster() == true")
-		return false
+		return true
 	}
 
 	// if the host don't match consul state, it's not slave (of the right node)
 	if r.redisState.Replication.MasterHost != r.consulState.MasterAddr {
 		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.Replication.MasterHost, r.consulState.MasterAddr)
-		return false
+		return true
 	}
 
 	// if the port don't match consul state, it's not slave (of the right node)
 	if r.redisState.Replication.MasterPort != r.consulState.MasterPort {
 		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.Replication.MasterPort, r.consulState.MasterPort)
-		return false
+		return true
 	}
 
 	// looks good
-	return true
+	return false
 }
 
 // stop will ensure consul and redis will gracefully stop

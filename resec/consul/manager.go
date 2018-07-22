@@ -384,14 +384,19 @@ func (m *Manager) CommandRunner() {
 			switch payload.name {
 			case RegisterServiceCommand:
 				m.registerService(payload.redisState)
+
 			case DeregisterServiceCommand:
 				m.deregisterService()
+
 			case UpdateServiceCommand:
 				m.setConsulCheckStatus(payload.redisState)
+
 			case ReleaseLockCommand:
 				m.releaseConsulLock()
+
 			case StartCommand:
 				m.start()
+
 			case StopConsulCommand:
 				m.cleanup()
 			}

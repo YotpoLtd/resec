@@ -17,15 +17,17 @@ var (
 )
 
 const (
-	ResultSkip             = resultType("skip")
-	ResultMissingState     = resultType("missing_state")
-	ResultConsulNotHealthy = resultType("consul_not_healthy")
-	ResultRedisNotHealthy  = resultType("redis_not_healthy")
-	ResultUpdateService    = resultType("consul_update_service")
-	ResultRunAsMaster      = resultType("run_as_master")
-	ResultRunAsSlave       = resultType("run_as_slave")
-	ResultNoMasterElected  = resultType("no_master_elected")
-	ResultUnknown          = resultType("unknown")
+	ResultConsulNotHealthy     = resultType("consul_not_healthy")
+	ResultMasterLinkDown       = resultType("master_link_down")
+	ResultMasterSyncInProgress = resultType("master_sync_in_progress")
+	ResultMissingState         = resultType("missing_state")
+	ResultNoMasterElected      = resultType("no_master_elected")
+	ResultRedisNotHealthy      = resultType("redis_not_healthy")
+	ResultRunAsMaster          = resultType("run_as_master")
+	ResultRunAsSlave           = resultType("run_as_slave")
+	ResultSkip                 = resultType("skip")
+	ResultUnknown              = resultType("unknown")
+	ResultUpdateService        = resultType("consul_update_service")
 )
 
 type resultType string
@@ -150,7 +152,23 @@ func (r *Reconciler) evaluate() resultType {
 			return ResultRunAsSlave
 		}
 
-		// TODO: consider replication lag
+		// if master link is down, lets wait for it to come back up
+		if r.isMasterLinkDown() && r.isMasterLinkDownTooLong() {
+			r.logger.Warn("Master link is down, can't serve traffic")
+			r.sendConsulCommand(consul.DeregisterServiceCommand)
+			return ResultMasterLinkDown
+		}
+
+		// if sycing with redis master, lets wait for it to complete
+		if r.isMasterSyncInProgress() {
+			r.logger.Warn("Master sync in progress, can't serve traffic")
+			r.sendConsulCommand(consul.DeregisterServiceCommand)
+			return ResultMasterSyncInProgress
+		}
+
+		//
+		// TODO(jippi): consider replication lag
+		//
 
 		// everything is fine, update service ttl
 		r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
@@ -202,6 +220,19 @@ func (r *Reconciler) stateReader() {
 			f.Reset(r.forceReconcileInterval)
 		}
 	}
+}
+
+func (r *Reconciler) isMasterSyncInProgress() bool {
+	return r.redisState.Replication.MasterSyncInProgress
+}
+
+func (r *Reconciler) isMasterLinkDown() bool {
+	return r.redisState.Replication.MasterLinkUp == false
+}
+
+func (r *Reconciler) isMasterLinkDownTooLong() bool {
+	// TODO(jippi): make 10s configurable
+	return r.redisState.Replication.MasterLinkDownSince > 10*time.Second
 }
 
 // missingInitialState return whether we got initial state from both Consul

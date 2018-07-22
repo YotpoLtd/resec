@@ -1,5 +1,9 @@
 package state
 
+import (
+	"time"
+)
+
 // Redis state represent the full state of the connection with Redis
 type Redis struct {
 	Healthy           bool                  // are we able to connect to Redis?
@@ -20,9 +24,12 @@ func (r *Redis) IsUnhealthy() bool {
 }
 
 type RedisReplicationState struct {
-	Role       string // current redis role (master or slave)
-	MasterHost string // if slave, the master hostname its replicating from
-	MasterPort int    // if slave, the master port its replicating from
+	Role                 string        // current redis role (master or slave)
+	MasterLinkUp         bool          // is the link to master up (master_link_status == up)
+	MasterLinkDownSince  time.Duration // for how long has the master link been down?
+	MasterSyncInProgress bool          // is a master sync in progress?
+	MasterHost           string        // if slave, the master hostname its replicating from
+	MasterPort           int           // if slave, the master port its replicating from
 }
 
 // changed will test if the current replication state is different from
@@ -37,6 +44,14 @@ func (r *RedisReplicationState) Changed(new RedisReplicationState) bool {
 	}
 
 	if r.MasterPort != new.MasterPort {
+		return true
+	}
+
+	if r.MasterLinkUp != new.MasterLinkUp {
+		return true
+	}
+
+	if r.MasterSyncInProgress != new.MasterSyncInProgress {
 		return true
 	}
 

@@ -94,25 +94,7 @@ func (m *Manager) watchReplicationStatus() {
 			m.emit()
 		}
 
-		kvPair := m.parseKeyValue(result)
-
-		// Create new replication state
-		replicationState := state.RedisReplicationState{
-			Role: kvPair["role"],
-		}
-
-		// Add master_host to state (if set) - only available for slaves
-		if masterHost, ok := kvPair["master_host"]; ok {
-			replicationState.MasterHost = masterHost
-		}
-
-		// Add master_port to state (if set) - only available for slaves
-		if masterPortString, ok := kvPair["master_port"]; ok {
-			masterPort, err := strconv.Atoi(masterPortString)
-			if err == nil {
-				replicationState.MasterPort = masterPort
-			}
-		}
+		replicationState := m.parseReplicationResult(result)
 
 		// compare current and new state, if no changes, don't publish
 		// a new state to the reconciler
@@ -142,6 +124,58 @@ func (m *Manager) waitForRedisToBeReady() {
 	}
 }
 
+func (m *Manager) Config() Config {
+	return *m.config
+}
+
+func (m *Manager) StateChReader() <-chan state.Redis {
+	return m.stateCh
+}
+
+func (m *Manager) CommandChWriter() chan<- Command {
+	return m.commandCh
+}
+
+func (m *Manager) parseReplicationResult(str string) state.RedisReplicationState {
+	kvPair := m.parseKeyValue(str)
+
+	// Create new replication state
+	newState := state.RedisReplicationState{
+		Role: kvPair["role"],
+	}
+
+	// Add master_host to state (if set) - only available for slaves
+	if masterHost, ok := kvPair["master_host"]; ok {
+		newState.MasterHost = masterHost
+	}
+
+	// Add master_port to state (if set) - only available for slaves
+	if masterPortString, ok := kvPair["master_port"]; ok {
+		masterPort, err := strconv.Atoi(masterPortString)
+		if err == nil {
+			newState.MasterPort = masterPort
+		}
+	}
+
+	// Is the master link up?
+	if masterLinkUpString, ok := kvPair["master_link_status"]; ok {
+		newState.MasterLinkUp = masterLinkUpString == "up"
+	}
+
+	// Is master sync in process?
+	if masterSyncInProgress, ok := kvPair["master_sync_in_progress"]; ok {
+		newState.MasterSyncInProgress = masterSyncInProgress != "0"
+	}
+
+	// track the time since the master link went down
+	if masterLinkDownSinceSecondsString, ok := kvPair["master_link_down_since_seconds"]; ok {
+		number, _ := strconv.Atoi(masterLinkDownSinceSecondsString)
+		newState.MasterLinkDownSince = time.Duration(number) * time.Second
+	}
+
+	return newState
+}
+
 func (m *Manager) parseKeyValue(str string) map[string]string {
 	res := make(map[string]string)
 
@@ -160,16 +194,4 @@ func (m *Manager) parseKeyValue(str string) map[string]string {
 	}
 
 	return res
-}
-
-func (m *Manager) Config() Config {
-	return *m.config
-}
-
-func (m *Manager) StateChReader() <-chan state.Redis {
-	return m.stateCh
-}
-
-func (m *Manager) CommandChWriter() chan<- Command {
-	return m.commandCh
 }

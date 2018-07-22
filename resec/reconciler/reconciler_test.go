@@ -4,6 +4,7 @@ package reconciler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/YotpoLtd/resec/resec/consul"
 	"github.com/YotpoLtd/resec/resec/redis"
@@ -177,8 +178,101 @@ func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
 			Ready:   true,
 			Healthy: true,
 			Replication: state.RedisReplicationState{
-				MasterHost: "127.0.0.1",
-				MasterPort: 6379,
+				MasterHost:   "127.0.0.1",
+				MasterPort:   6379,
+				MasterLinkUp: true,
+			},
+		}).
+		expectConsulCommands(
+			consul.UpdateServiceCommand,
+		).
+		eval(ResultUpdateService)
+}
+
+func TestReconciler_SlaveMasterSyncInProgress(t *testing.T) {
+	helper := newTestReconsiler(t)
+	helper.consume()
+	defer helper.stop()
+
+	// with local Consul and Redis healthy, but not elected Consul master
+	// and a remote Consul master, which Redis is already enslaved to
+	// but currently syncing data from master,
+	// the reconsiler should deregister service and wait for sync to complete
+	helper.
+		withConsulState(state.Consul{
+			Ready:      true,
+			Healthy:    true,
+			MasterAddr: "127.0.0.1",
+			MasterPort: 6379,
+		}).
+		withRedisState(state.Redis{
+			Ready:   true,
+			Healthy: true,
+			Replication: state.RedisReplicationState{
+				MasterHost:           "127.0.0.1",
+				MasterPort:           6379,
+				MasterSyncInProgress: true,
+				MasterLinkUp:         true,
+			},
+		}).
+		expectConsulCommands(
+			consul.DeregisterServiceCommand,
+		).
+		eval(ResultMasterSyncInProgress)
+}
+func TestReconciler_SlaveMasterLinkDownToolong(t *testing.T) {
+	helper := newTestReconsiler(t)
+	helper.consume()
+	defer helper.stop()
+
+	// with local Consul and Redis healthy, but not elected Consul master
+	// and a remote Consul master, which Redis is already enslaved,
+	// but the replication link has been down for too long
+	helper.
+		withConsulState(state.Consul{
+			Ready:      true,
+			Healthy:    true,
+			MasterAddr: "127.0.0.1",
+			MasterPort: 6379,
+		}).
+		withRedisState(state.Redis{
+			Ready:   true,
+			Healthy: true,
+			Replication: state.RedisReplicationState{
+				MasterHost:          "127.0.0.1",
+				MasterPort:          6379,
+				MasterLinkUp:        false,
+				MasterLinkDownSince: 15 * time.Second,
+			},
+		}).
+		expectConsulCommands(
+			consul.DeregisterServiceCommand,
+		).
+		eval(ResultMasterLinkDown)
+}
+func TestReconciler_SlaveMasterLinkDownWithinReason(t *testing.T) {
+	helper := newTestReconsiler(t)
+	helper.consume()
+	defer helper.stop()
+
+	// with local Consul and Redis healthy, but not elected Consul master
+	// and a remote Consul master, which Redis is already enslaved,
+	// but the replication link has been down within the limit configured
+	helper.
+		withConsulState(state.Consul{
+			Ready:      true,
+			Healthy:    true,
+			MasterAddr: "127.0.0.1",
+			MasterPort: 6379,
+		}).
+		withRedisState(state.Redis{
+			Ready:   true,
+			Healthy: true,
+			Replication: state.RedisReplicationState{
+				MasterHost:          "127.0.0.1",
+				MasterPort:          6379,
+				MasterLinkUp:        false,
+				MasterLinkDownSince: 5 * time.Second,
 			},
 		}).
 		expectConsulCommands(

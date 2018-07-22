@@ -222,14 +222,20 @@ func (r *Reconciler) stateReader() {
 	}
 }
 
+// isMasterSyncInProgress return whether the slave is currently doing a full sync from
+// the redis master - this is also the initial sync triggered by doing a SLAVEOF command
 func (r *Reconciler) isMasterSyncInProgress() bool {
 	return r.redisState.Replication.MasterSyncInProgress
 }
 
+// isMasterLinkDown return whether the slave has lost connection to the
+// redis master
 func (r *Reconciler) isMasterLinkDown() bool {
 	return r.redisState.Replication.MasterLinkUp == false
 }
 
+// isMasterLinkDownTooLong return whether the slave has lost connectity to the
+// redis master for too long
 func (r *Reconciler) isMasterLinkDownTooLong() bool {
 	// TODO(jippi): make 10s configurable
 	return r.redisState.Replication.MasterLinkDownSince > 10*time.Second

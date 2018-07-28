@@ -86,20 +86,20 @@ func (r *Reconciler) Run() {
 			return
 
 		case <-t.C:
+			r.Lock()
 			r.evaluate()
+			r.Unlock()
 		}
 	}
 }
 
 func (r *Reconciler) evaluate() resultType {
-	r.Lock()
-	defer r.Unlock()
-	defer r.timeTrack(time.Now(), "reconsiler")
-
 	// No new state since last, doing nothing
 	if r.reconcile == false {
 		return ResultSkip
 	}
+	defer r.timeTrack(time.Now(), "reconsiler")
+
 	r.reconcile = false
 
 	// do we have the initial state to start reconciliation
@@ -234,20 +234,20 @@ func (r *Reconciler) stateReader() {
 // isMasterSyncInProgress return whether the slave is currently doing a full sync from
 // the redis master - this is also the initial sync triggered by doing a SLAVEOF command
 func (r *Reconciler) isMasterSyncInProgress() bool {
-	return r.redisState.Status.MasterSyncInProgress
+	return r.redisState.Info.MasterSyncInProgress
 }
 
 // isMasterLinkDown return whether the slave has lost connection to the
 // redis master
 func (r *Reconciler) isMasterLinkDown() bool {
-	return r.redisState.Status.MasterLinkUp == false
+	return r.redisState.Info.MasterLinkUp == false
 }
 
 // isMasterLinkDownTooLong return whether the slave has lost connectity to the
 // redis master for too long
 func (r *Reconciler) isMasterLinkDownTooLong() bool {
 	// TODO(jippi): make 10s configurable
-	return r.redisState.Status.MasterLinkDownSince > 10*time.Second
+	return r.redisState.Info.MasterLinkDownSince > 10*time.Second
 }
 
 // missingInitialState return whether we got initial state from both Consul
@@ -278,14 +278,14 @@ func (r *Reconciler) notSlaveOfCurrentMaster() bool {
 	}
 
 	// if the host don't match consul state, it's not slave (of the right node)
-	if r.redisState.Status.MasterHost != r.consulState.MasterAddr {
-		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.Status.MasterHost, r.consulState.MasterAddr)
+	if r.redisState.Info.MasterHost != r.consulState.MasterAddr {
+		logger.Debugf("'master_host=%s' do not match expected master host %s", r.redisState.Info.MasterHost, r.consulState.MasterAddr)
 		return true
 	}
 
 	// if the port don't match consul state, it's not slave (of the right node)
-	if r.redisState.Status.MasterPort != r.consulState.MasterPort {
-		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.Status.MasterPort, r.consulState.MasterPort)
+	if r.redisState.Info.MasterPort != r.consulState.MasterPort {
+		logger.Debugf("'master_port=%d' do not match expected master host %d", r.redisState.Info.MasterPort, r.consulState.MasterPort)
 		return true
 	}
 

@@ -119,16 +119,16 @@ func (m *Manager) watchStatus() {
 			m.emit()
 		}
 
-		replicationState := m.parseStatusResult(result)
+		info := m.parseInfoResult(result)
 
 		// compare current and new state, if no changes, don't publish
 		// a new state to the reconciler
-		if replicationState.Changed(m.state.Status) == false {
+		if info.Changed(m.state.Info) == false {
 			continue
 		}
 
-		m.state.Status = replicationState
-		m.state.StatusString = result
+		m.state.Info = info
+		m.state.InfoString = result
 		m.emit()
 	}
 }
@@ -140,7 +140,7 @@ func (m *Manager) waitForRedisToBeReady() {
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready
-		if m.state.Status.Role != "" && m.state.Status.Loading == false {
+		if m.state.Info.Role != "" && m.state.Info.Loading == false {
 			m.state.Ready = true
 			m.emit()
 
@@ -161,7 +161,7 @@ func (m *Manager) CommandChWriter() chan<- Command {
 	return m.commandCh
 }
 
-func (m *Manager) parseStatusResult(str string) state.RedisStatus {
+func (m *Manager) parseInfoResult(str string) state.RedisStatus {
 	kvPair := m.parseKeyValue(str)
 
 	// Create new replication state
@@ -196,6 +196,12 @@ func (m *Manager) parseStatusResult(str string) state.RedisStatus {
 	if masterLinkDownSinceSecondsString, ok := kvPair["master_link_down_since_seconds"]; ok {
 		number, _ := strconv.Atoi(masterLinkDownSinceSecondsString)
 		newState.MasterLinkDownSince = time.Duration(number) * time.Second
+	}
+
+	// track if redis is loading data
+	if loadingStr, ok := kvPair["loading"]; ok {
+		loading, _ := strconv.ParseBool(loadingStr)
+		newState.Loading = loading
 	}
 
 	return newState

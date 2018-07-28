@@ -6,17 +6,17 @@ import (
 
 // Redis state represent the full state of the connection with Redis
 type Redis struct {
-	Healthy      bool        // are we able to connect to Redis?
-	Ready        bool        // are we ready to provide state for the reconciler?
-	Status       RedisStatus // parse "info" data
-	StatusString string      // raw "info" data
-	Stopped      bool
+	Healthy    bool        // are we able to connect to Redis?
+	Ready      bool        // are we ready to provide state for the reconciler?
+	Info       RedisStatus // parse "info" data
+	InfoString string      // raw "info" data
+	Stopped    bool
 }
 
 // isRedisMaster return whether the Redis under management currently
 // see itself as a master instance or not
 func (r *Redis) IsRedisMaster() bool {
-	return r.Status.Role == "master"
+	return r.Info.Role == "master"
 }
 
 func (r *Redis) IsUnhealthy() bool {

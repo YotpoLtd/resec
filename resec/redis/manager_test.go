@@ -135,7 +135,7 @@ repl_backlog_histlen:1526`),
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &Manager{}
-			assert.Equal(t, tt.want, m.parseStatusResult(tt.str))
+			assert.Equal(t, tt.want, m.parseInfoResult(tt.str))
 		})
 	}
 }

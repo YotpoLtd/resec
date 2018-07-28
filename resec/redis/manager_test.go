@@ -99,6 +99,38 @@ repl_backlog_histlen:1526`),
 				MasterPort:          6379,
 			},
 		},
+		{
+			name: "slave - slave sync in progress",
+			str: newlinefix(`
+# Replication
+role:slave
+master_host:127.0.0.1
+master_port:6379
+master_link_status:down
+master_last_io_seconds_ago:-1
+master_sync_in_progress:1
+slave_repl_offset:32102871
+master_link_down_since_seconds:35
+slave_priority:100
+slave_read_only:1
+connected_slaves:0
+master_replid:65731058a8ddc1d178d9cb7f8a3a8d41c224af41
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:32102871
+second_repl_offset:-1
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:32101346
+repl_backlog_histlen:1526`),
+			want: state.RedisReplicationState{
+				Role:                 "slave",
+				MasterLinkUp:         false,
+				MasterSyncInProgress: true,
+				MasterLinkDownSince:  35 * time.Second,
+				MasterHost:           "127.0.0.1",
+				MasterPort:           6379,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

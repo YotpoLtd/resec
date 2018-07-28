@@ -156,18 +156,18 @@ func (r *Reconciler) evaluate() resultType {
 			return ResultRunAsSlave
 		}
 
-		// if master link is down, lets wait for it to come back up
-		if r.isMasterLinkDown() && r.isMasterLinkDownTooLong() {
-			r.logger.Warn("Master link is down, can't serve traffic")
-			r.sendConsulCommand(consul.DeregisterServiceCommand)
-			return ResultMasterLinkDown
-		}
-
 		// if sycing with redis master, lets wait for it to complete
 		if r.isMasterSyncInProgress() {
 			r.logger.Warn("Master sync in progress, can't serve traffic")
 			r.sendConsulCommand(consul.DeregisterServiceCommand)
 			return ResultMasterSyncInProgress
+		}
+
+		// if master link is down, lets wait for it to come back up
+		if r.isMasterLinkDown() && r.isMasterLinkDownTooLong() {
+			r.logger.Warn("Master link is down, can't serve traffic")
+			r.sendConsulCommand(consul.DeregisterServiceCommand)
+			return ResultMasterLinkDown
 		}
 
 		//

@@ -91,7 +91,7 @@ func main() {
 		cli.StringFlag{
 			Name:   "log-level",
 			Value:  "info",
-			Usage:  "Debug level (debug, info, warn/warning, error, fatal, panic)",
+			Usage:  "Log level (debug, info, warn/warning, error, fatal, panic)",
 			EnvVar: "LOG_LEVEL",
 		},
 		cli.StringFlag{

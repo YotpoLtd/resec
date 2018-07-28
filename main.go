@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YotpoLtd/resec/resec/reconciler"
+	gelf "github.com/seatgeek/logrus-gelf-formatter"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )
@@ -95,6 +96,12 @@ func main() {
 			EnvVar: "LOG_LEVEL",
 		},
 		cli.StringFlag{
+			Name:   "log-format",
+			Value:  "text",
+			Usage:  "Log formst (text, gelf, json)",
+			EnvVar: "LOG_FORMAT",
+		},
+		cli.StringFlag{
 			Name:   "redis-addr",
 			Value:  "127.0.0.1:6379",
 			Usage:  "IP + Port for the Redis server",
@@ -111,8 +118,16 @@ func main() {
 		if err != nil {
 			return err
 		}
-
 		log.SetLevel(level)
+
+		switch c.String("log-format") {
+		case "text":
+			// default
+		case "json":
+			log.SetFormatter(&log.JSONFormatter{})
+		case "gelf":
+			log.SetFormatter(&gelf.GelfFormatter{})
+		}
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {

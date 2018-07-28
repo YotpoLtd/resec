@@ -47,6 +47,7 @@ type Reconciler struct {
 	redisStateCh           <-chan state.Redis    // Read-only channel to get Redis state updates
 	signalCh               chan os.Signal        // signal channel (OS / signal shutdown)
 	stopCh                 chan interface{}      // stop channel (internal shutdown)s
+	sync.Mutex
 }
 
 // sendRedisCommand will build and send a Redis command
@@ -91,6 +92,9 @@ func (r *Reconciler) Run() {
 }
 
 func (r *Reconciler) evaluate() resultType {
+	r.Lock()
+	defer r.Unlock()
+
 	// No new state since last, doing nothing
 	if r.reconcile == false {
 		return ResultSkip
@@ -202,10 +206,12 @@ func (r *Reconciler) stateReader() {
 				return
 			}
 
+			r.Lock()
 			r.logger.Debug("New Redis state")
 			r.redisState = redis
 			r.reconcile = true
 			f.Reset(r.forceReconcileInterval)
+			r.Unlock()
 
 		// New Consul state change
 		case consul, ok := <-r.consulStateCh:
@@ -214,10 +220,12 @@ func (r *Reconciler) stateReader() {
 				return
 			}
 
+			r.Lock()
 			r.logger.Debug("New Consul state")
 			r.consulState = consul
 			r.reconcile = true
 			f.Reset(r.forceReconcileInterval)
+			r.Unlock()
 		}
 	}
 }

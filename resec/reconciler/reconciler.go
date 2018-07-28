@@ -77,7 +77,7 @@ func (r *Reconciler) Run() {
 		// signal handler
 		case <-r.signalCh:
 			fmt.Println("")
-			r.logger.Info("Caught signal, stopping worker loop")
+			r.logger.Info("Caught signal, stopping reconsiler loop")
 			go r.stop()
 
 		// stop the infinite loop
@@ -202,7 +202,7 @@ func (r *Reconciler) stateReader() {
 		// New redis state change
 		case redis, ok := <-r.redisStateCh:
 			if !ok {
-				r.logger.Error("Redis replication channel was closed, shutting down")
+				r.logger.Error("Redis state channel was closed, shutting down")
 				return
 			}
 
@@ -216,7 +216,7 @@ func (r *Reconciler) stateReader() {
 		// New Consul state change
 		case consul, ok := <-r.consulStateCh:
 			if !ok {
-				r.logger.Error("Consul master service channel was closed, shutting down")
+				r.logger.Error("Consul state channel was closed, shutting down")
 				return
 			}
 

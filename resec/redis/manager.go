@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/go-redis/redis"
 )
 
 // emit will send a state update to the reconciler
@@ -33,6 +34,19 @@ func (m *Manager) runAsSlave(masterAddress string, masterPort int) error {
 	}
 
 	m.logger.Infof("Enslaved redis %s to be slave of %s:%d", m.config.Address, masterAddress, masterPort)
+	return nil
+}
+
+// disconnect all normal connections
+func (m *Manager) disconnectUsers() error {
+	m.logger.Warnf("Disconnecting all clients")
+	cmd := redis.NewIntCmd("CLIENT", "KILL", "TYPE", "normal")
+	m.client.Process(cmd)
+	if err := cmd.Err(); err != nil {
+		return err
+	}
+
+	m.logger.Warnf("Disconnected %d users", cmd.Val())
 	return nil
 }
 
@@ -64,10 +78,19 @@ func (m *Manager) CommandRunner() {
 				m.cleanup()
 
 			case RunAsMasterCommand:
-				m.runAsMaster()
+				if err := m.runAsMaster(); err != nil {
+					m.logger.Error(err)
+				}
 
 			case RunAsSlaveCommand:
-				m.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort)
+				if err := m.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort); err != nil {
+					m.logger.Error(err)
+					continue
+				}
+
+				if err := m.disconnectUsers(); err != nil {
+					m.logger.Error(err)
+				}
 			}
 		}
 	}

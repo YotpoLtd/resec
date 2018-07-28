@@ -1,6 +1,8 @@
 package redis
 
 import (
+	"time"
+
 	"github.com/YotpoLtd/resec/resec/state"
 	"github.com/go-redis/redis"
 	log "github.com/sirupsen/logrus"
@@ -14,10 +16,11 @@ func NewConnection(m *cli.Context) (*Manager, error) {
 
 	instance := &Manager{
 		client: redis.NewClient(&redis.Options{
-			Addr:        redisConfig.Address,
-			DialTimeout: m.Duration("healthcheck-timeout"),
-			Password:    m.String("redis-password"),
-			ReadTimeout: m.Duration("healthcheck-timeout"),
+			Addr:         redisConfig.Address,
+			DialTimeout:  1 * time.Second,
+			Password:     m.String("redis-password"),
+			ReadTimeout:  1 * time.Second,
+			WriteTimeout: 1 * time.Second,
 		}),
 		config: redisConfig,
 		logger: log.WithFields(log.Fields{

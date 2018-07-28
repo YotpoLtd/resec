@@ -1,8 +1,6 @@
 package redis
 
 import (
-	"fmt"
-
 	"github.com/YotpoLtd/resec/resec/state"
 	"github.com/go-redis/redis"
 	log "github.com/sirupsen/logrus"
@@ -30,10 +28,6 @@ func NewConnection(m *cli.Context) (*Manager, error) {
 		stateCh:   make(chan state.Redis, 1),
 		commandCh: make(chan Command, 1),
 		stopCh:    make(chan interface{}, 1),
-	}
-
-	if err := instance.client.Ping().Err(); err != nil {
-		return nil, fmt.Errorf("Can't communicate to Redis server: %s", err)
 	}
 
 	return instance, nil

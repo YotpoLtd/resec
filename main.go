@@ -122,11 +122,13 @@ func main() {
 
 		switch c.String("log-format") {
 		case "text":
-			// default
+			log.SetFormatter(&log.TextFormatter{})
 		case "json":
 			log.SetFormatter(&log.JSONFormatter{})
 		case "gelf":
 			log.SetFormatter(&gelf.GelfFormatter{})
+		default:
+			log.Fatal("Invalid log format (text, json, gelf)")
 		}
 		return nil
 	}

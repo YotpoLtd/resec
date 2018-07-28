@@ -140,7 +140,7 @@ func (m *Manager) waitForRedisToBeReady() {
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready
-		if m.state.Replication.Role != "" {
+		if m.state.Replication.Role != "" && m.state.Replication.MasterSyncInProgress == false {
 			m.state.Ready = true
 			m.emit()
 

@@ -94,6 +94,7 @@ func (r *Reconciler) Run() {
 func (r *Reconciler) evaluate() resultType {
 	r.Lock()
 	defer r.Unlock()
+	defer r.timeTrack(time.Now(), "reconsiler")
 
 	// No new state since last, doing nothing
 	if r.reconcile == false {
@@ -329,4 +330,9 @@ func (r *Reconciler) stop() {
 
 	r.logger.Debugf("Cleanup completed")
 	close(r.stopCh)
+}
+
+func (r *Reconciler) timeTrack(start time.Time, name string) {
+	elapsed := time.Since(start)
+	r.logger.Debugf("%s took %s", name, elapsed)
 }

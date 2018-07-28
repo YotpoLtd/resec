@@ -57,7 +57,7 @@ func TestReconciler_RunBecomeMaster(t *testing.T) {
 		withRedisState(state.Redis{
 			Ready:   true,
 			Healthy: true,
-			Replication: state.RedisReplicationState{
+			Status: state.RedisStatus{
 				Role: "master",
 			},
 		}).
@@ -177,7 +177,7 @@ func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
 		withRedisState(state.Redis{
 			Ready:   true,
 			Healthy: true,
-			Replication: state.RedisReplicationState{
+			Status: state.RedisStatus{
 				MasterHost:   "127.0.0.1",
 				MasterPort:   6379,
 				MasterLinkUp: true,
@@ -208,7 +208,7 @@ func TestReconciler_SlaveMasterSyncInProgress(t *testing.T) {
 		withRedisState(state.Redis{
 			Ready:   true,
 			Healthy: true,
-			Replication: state.RedisReplicationState{
+			Status: state.RedisStatus{
 				MasterHost:           "127.0.0.1",
 				MasterPort:           6379,
 				MasterSyncInProgress: true,
@@ -238,7 +238,7 @@ func TestReconciler_SlaveMasterLinkDownToolong(t *testing.T) {
 		withRedisState(state.Redis{
 			Ready:   true,
 			Healthy: true,
-			Replication: state.RedisReplicationState{
+			Status: state.RedisStatus{
 				MasterHost:          "127.0.0.1",
 				MasterPort:          6379,
 				MasterLinkUp:        false,
@@ -268,7 +268,7 @@ func TestReconciler_SlaveMasterLinkDownWithinReason(t *testing.T) {
 		withRedisState(state.Redis{
 			Ready:   true,
 			Healthy: true,
-			Replication: state.RedisReplicationState{
+			Status: state.RedisStatus{
 				MasterHost:          "127.0.0.1",
 				MasterPort:          6379,
 				MasterLinkUp:        false,

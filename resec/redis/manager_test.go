@@ -13,12 +13,12 @@ func TestManager_parseReplicationResult(t *testing.T) {
 	tests := []struct {
 		name string
 		str  string
-		want state.RedisReplicationState
+		want state.RedisStatus
 	}{
 		{
 			name: "empty",
 			str:  "",
-			want: state.RedisReplicationState{},
+			want: state.RedisStatus{},
 		},
 		{
 			name: "master - one slave",
@@ -35,7 +35,7 @@ repl_backlog_active:1
 repl_backlog_size:1048576
 repl_backlog_first_byte_offset:1
 repl_backlog_histlen:14`),
-			want: state.RedisReplicationState{
+			want: state.RedisStatus{
 				Role: "master",
 			},
 		},
@@ -61,7 +61,7 @@ repl_backlog_active:1
 repl_backlog_size:1048576
 repl_backlog_first_byte_offset:1
 repl_backlog_histlen:70`),
-			want: state.RedisReplicationState{
+			want: state.RedisStatus{
 				Role:         "slave",
 				MasterLinkUp: true,
 				MasterHost:   "127.0.0.1",
@@ -91,7 +91,7 @@ repl_backlog_active:1
 repl_backlog_size:1048576
 repl_backlog_first_byte_offset:32101346
 repl_backlog_histlen:1526`),
-			want: state.RedisReplicationState{
+			want: state.RedisStatus{
 				Role:                "slave",
 				MasterLinkUp:        false,
 				MasterLinkDownSince: 35 * time.Second,
@@ -122,7 +122,7 @@ repl_backlog_active:1
 repl_backlog_size:1048576
 repl_backlog_first_byte_offset:32101346
 repl_backlog_histlen:1526`),
-			want: state.RedisReplicationState{
+			want: state.RedisStatus{
 				Role:                 "slave",
 				MasterLinkUp:         false,
 				MasterSyncInProgress: true,
@@ -135,7 +135,7 @@ repl_backlog_histlen:1526`),
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &Manager{}
-			assert.Equal(t, tt.want, m.parseReplicationResult(tt.str))
+			assert.Equal(t, tt.want, m.parseStatusResult(tt.str))
 		})
 	}
 }

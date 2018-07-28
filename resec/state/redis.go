@@ -6,25 +6,26 @@ import (
 
 // Redis state represent the full state of the connection with Redis
 type Redis struct {
-	Healthy           bool                  // are we able to connect to Redis?
-	Ready             bool                  // are we ready to provide state for the reconciler?
-	Replication       RedisReplicationState // current replication data
-	ReplicationString string                // raw replication info
-	Stopped           bool
+	Healthy      bool        // are we able to connect to Redis?
+	Ready        bool        // are we ready to provide state for the reconciler?
+	Status       RedisStatus // parse "info" data
+	StatusString string      // raw "info" data
+	Stopped      bool
 }
 
 // isRedisMaster return whether the Redis under management currently
 // see itself as a master instance or not
 func (r *Redis) IsRedisMaster() bool {
-	return r.Replication.Role == "master"
+	return r.Status.Role == "master"
 }
 
 func (r *Redis) IsUnhealthy() bool {
 	return r.Healthy == false
 }
 
-type RedisReplicationState struct {
+type RedisStatus struct {
 	Role                 string        // current redis role (master or slave)
+	Loading              bool          // is redis currently loading data from disk?
 	MasterLinkUp         bool          // is the link to master up (master_link_status == up)
 	MasterLinkDownSince  time.Duration // for how long has the master link been down?
 	MasterSyncInProgress bool          // is a master sync in progress?
@@ -34,7 +35,7 @@ type RedisReplicationState struct {
 
 // changed will test if the current replication state is different from
 // the new one passed in as argument
-func (r *RedisReplicationState) Changed(new RedisReplicationState) bool {
+func (r *RedisStatus) Changed(new RedisStatus) bool {
 	if r.Role != new.Role {
 		return true
 	}
@@ -52,6 +53,10 @@ func (r *RedisReplicationState) Changed(new RedisReplicationState) bool {
 	}
 
 	if r.MasterSyncInProgress != new.MasterSyncInProgress {
+		return true
+	}
+
+	if r.Loading != new.Loading {
 		return true
 	}
 

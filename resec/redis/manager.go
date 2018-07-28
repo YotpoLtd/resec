@@ -60,7 +60,7 @@ func (m *Manager) cleanup() {
 }
 
 func (m *Manager) start() {
-	go m.watchReplicationStatus()
+	go m.watchStatus()
 	m.waitForRedisToBeReady()
 }
 
@@ -98,12 +98,12 @@ func (m *Manager) CommandRunner() {
 	}
 }
 
-// watchReplicationStatus checks redis replication status
-func (m *Manager) watchReplicationStatus() {
+// watchStatus checks redis replication status
+func (m *Manager) watchStatus() {
 	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
-		result, err := m.client.Info("replication").Result()
+		result, err := m.client.Info().Result()
 		// any failure will trigger a disconnect event
 		if err != nil {
 			m.state.Healthy = false
@@ -119,16 +119,16 @@ func (m *Manager) watchReplicationStatus() {
 			m.emit()
 		}
 
-		replicationState := m.parseReplicationResult(result)
+		replicationState := m.parseStatusResult(result)
 
 		// compare current and new state, if no changes, don't publish
 		// a new state to the reconciler
-		if replicationState.Changed(m.state.Replication) == false {
+		if replicationState.Changed(m.state.Status) == false {
 			continue
 		}
 
-		m.state.Replication = replicationState
-		m.state.ReplicationString = result
+		m.state.Status = replicationState
+		m.state.StatusString = result
 		m.emit()
 	}
 }
@@ -140,7 +140,7 @@ func (m *Manager) waitForRedisToBeReady() {
 
 	for ; true; <-t.C {
 		// if we got replication data from redis, we are ready
-		if m.state.Replication.Role != "" && m.state.Replication.MasterSyncInProgress == false {
+		if m.state.Status.Role != "" && m.state.Status.Loading == false {
 			m.state.Ready = true
 			m.emit()
 
@@ -161,11 +161,11 @@ func (m *Manager) CommandChWriter() chan<- Command {
 	return m.commandCh
 }
 
-func (m *Manager) parseReplicationResult(str string) state.RedisReplicationState {
+func (m *Manager) parseStatusResult(str string) state.RedisStatus {
 	kvPair := m.parseKeyValue(str)
 
 	// Create new replication state
-	newState := state.RedisReplicationState{
+	newState := state.RedisStatus{
 		Role: kvPair["role"],
 	}
 

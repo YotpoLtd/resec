@@ -21,19 +21,21 @@ func (m *Manager) runAsMaster() error {
 		return err
 	}
 
+	m.logger = m.logger.WithField("role", "master")
 	m.logger.Info("Promoted redis to Master")
 	return nil
 }
 
 // runAsSlave sets the instance to be a slave for the master
 func (m *Manager) runAsSlave(masterAddress string, masterPort int) error {
-	m.logger.Infof("Enslaving redis %s to be slave of %s:%d", m.config.Address, masterAddress, masterPort)
+	m.logger.Infof("Enslaving redis to be slave of %s:%d", masterAddress, masterPort)
 
 	if err := m.client.SlaveOf(masterAddress, strconv.Itoa(masterPort)).Err(); err != nil {
-		return fmt.Errorf("Could not enslave redis %s to be slave of %s:%d (%v)", m.config.Address, masterAddress, masterPort, err)
+		return fmt.Errorf("Could not enslave redis to be slave of %s:%d (%v)", masterAddress, masterPort, err)
 	}
 
-	m.logger.Infof("Enslaved redis %s to be slave of %s:%d", m.config.Address, masterAddress, masterPort)
+	m.logger = m.logger.WithField("role", "slave")
+	m.logger.Infof("Enslaved redis to be slave of %s:%d", masterAddress, masterPort)
 	return nil
 }
 

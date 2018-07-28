@@ -21,8 +21,11 @@ func NewConnection(m *cli.Context) (*Manager, error) {
 			Password:    m.String("redis-password"),
 			ReadTimeout: m.Duration("healthcheck-timeout"),
 		}),
-		config:    redisConfig,
-		logger:    log.WithField("system", "redis"),
+		config: redisConfig,
+		logger: log.WithFields(log.Fields{
+			"system":     "redis",
+			"redis_addr": m.String("redis-addr"),
+		}),
 		state:     &state.Redis{},
 		stateCh:   make(chan state.Redis, 1),
 		commandCh: make(chan Command, 1),

@@ -122,7 +122,7 @@ func main() {
 
 		switch c.String("log-format") {
 		case "text":
-			log.SetFormatter(&log.TextFormatter{})
+			log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 		case "json":
 			log.SetFormatter(&log.JSONFormatter{})
 		case "gelf":

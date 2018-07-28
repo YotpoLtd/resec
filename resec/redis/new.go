@@ -28,8 +28,8 @@ func NewConnection(m *cli.Context) (*Manager, error) {
 			"redis_addr": m.String("redis-addr"),
 		}),
 		state:     &state.Redis{},
-		stateCh:   make(chan state.Redis, 1),
-		commandCh: make(chan Command, 1),
+		stateCh:   make(chan state.Redis, 10),
+		commandCh: make(chan Command, 10),
 		stopCh:    make(chan interface{}, 1),
 	}
 

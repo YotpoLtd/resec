@@ -12,13 +12,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	resec.waitForRedisToBeReady()
+	go resec.watchRedisUptime()
 	go resec.watchRedisReplicationStatus()
 	go resec.watchConsulMasterService()
 
-	defer func() {
-		log.Printf("[INFO] Shutting down ...")
-		resec.stop()
-	}()
-
-	resec.start()
+	resec.run()
 }

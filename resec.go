@@ -2,23 +2,24 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	consulapi "github.com/hashicorp/consul/api"
 )
 
 //start starts the procedure
-func (rc *resec) start() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+func (rc *resec) run() {
+	defer func() { rc.cleanup() }()
 
 	for {
 		select {
 		// got signal from the OS
-		case <-c:
+		case <-rc.sigCh:
 			log.Printf("[INFO] Caught signal, stopping worker loop")
+			return
+
+		// got internal request to shut down
+		case <-rc.stopCh:
+			log.Printf("[INFO] Shutdown requested, stopping worker loop")
 			return
 
 		// got an update on redis replication status
@@ -202,8 +203,8 @@ func (rc *resec) parseMasterInfo(consulServiceInfo *consulapi.ServiceEntry) redi
 	return info
 }
 
-//stop stops the procedure
-func (rc *resec) stop() {
+// cleanup will clenup locks and similar internal state
+func (rc *resec) cleanup() {
 	rc.releaseConsulLock()
 
 	if rc.consul.serviceID != "" {

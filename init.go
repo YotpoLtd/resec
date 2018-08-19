@@ -5,8 +5,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -103,6 +105,8 @@ type resec struct {
 	consulMasterServiceCh chan []*consulapi.ServiceEntry // channel where consul updates to the master service will be published
 	redis                 *redisConnection               // internal Redis state
 	redisReplicationCh    chan *redisHealth              // channel where redis updates will be published
+	sigCh                 chan os.Signal                 // signal handler channel
+	stopCh                chan interface{}               // stop channel for non-signal termination
 }
 
 // setup returns the default configuration for the ReSeC
@@ -133,7 +137,11 @@ func setup() (*resec, error) {
 		healthCheckTimeout:    2 * time.Minute,
 		consulMasterServiceCh: make(chan []*consulapi.ServiceEntry, 1),
 		redisReplicationCh:    make(chan *redisHealth, 1),
+		sigCh:                 make(chan os.Signal, 1),
+		stopCh:                make(chan interface{}, 1),
 	}
+
+	signal.Notify(config.sigCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 
 	if logLevel := os.Getenv(LogLevel); logLevel != "" {
 		config.logLevel = logLevel

@@ -1,9 +1,19 @@
+## 0.5.0 (September 16, 2018)
+
+FEATURES:
+
+  * Configure via CLI arguments
+  * Add json/gelf log support
+  * Tests
+
+FIXES:
+  * Split-brain when redis master restarted without restart of its resec
+
 ## 0.4.3 (July 15, 2018)
 
 FIXES:
 
   * Allow same Master and Slave tags when using CONSUL_SERVICE_PREFIX
-
 
 ## 0.4.2 (July 15, 2018)
 

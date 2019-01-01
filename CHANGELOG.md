@@ -1,3 +1,9 @@
+## 0.5.1 (January 16, 2019)
+
+FIXES:
+
+  * Docker build
+
 ## 0.5.0 (September 16, 2018)
 
 FEATURES:

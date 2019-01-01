@@ -59,32 +59,39 @@ func (m *Manager) cleanup() {
 	m.emit()
 }
 
-func (m *Manager) start() {
-	go m.watchStatus()
-	m.waitForRedisToBeReady()
-}
-
 func (m *Manager) CommandRunner() {
 	for {
 		select {
 
 		case <-m.stopCh:
+			m.logger.Infof("Shutting down Redis command runner")
 			return
 
 		case payload := <-m.commandCh:
 			switch payload.name {
 			case StartCommand:
-				m.start()
+				go m.watchStatus()
 
 			case StopCommand:
+				m.logger.Infof("Stop command sent to Redis")
 				m.cleanup()
 
 			case RunAsMasterCommand:
+				if !m.state.Ready {
+					m.logger.Warnf("Got 'runAsMaster' command, but Redis is not ready yet - ignoring")
+					continue
+				}
+
 				if err := m.runAsMaster(); err != nil {
 					m.logger.Error(err)
 				}
 
 			case RunAsSlaveCommand:
+				if !m.state.Ready {
+					m.logger.Warnf("Got 'runAsSlave' command, but Redis is not ready yet - ignoring")
+					continue
+				}
+
 				if err := m.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort); err != nil {
 					m.logger.Error(err)
 					continue
@@ -100,6 +107,16 @@ func (m *Manager) CommandRunner() {
 
 // watchStatus checks redis replication status
 func (m *Manager) watchStatus() {
+	if m.watcherRunning {
+		m.logger.Warn("Trying to start status watcher, but already running, ignoring...")
+		return
+	}
+	m.watcherRunning = true
+
+	defer func() {
+		m.watcherRunning = false
+	}()
+
 	ticker := time.NewTicker(time.Second)
 
 	for ; true; <-ticker.C {
@@ -127,25 +144,15 @@ func (m *Manager) watchStatus() {
 			continue
 		}
 
+		// If we get to here, and we haven't marked our self as ready yet,
+		// lets do so now so the reconsiler will start working
+		if m.state.Ready == false {
+			m.state.Ready = true
+		}
+
 		m.state.Info = info
 		m.state.InfoString = result
 		m.emit()
-	}
-}
-
-// waitForRedisToBeReady will check if we got the initial redis state we need
-// for the reconciler to do its job right out of the box
-func (m *Manager) waitForRedisToBeReady() {
-	t := time.NewTicker(500 * time.Millisecond)
-
-	for ; true; <-t.C {
-		// if we got replication data from redis, we are ready
-		if m.state.Info.Role != "" && m.state.Info.Loading == false {
-			m.state.Ready = true
-			m.emit()
-
-			return
-		}
 	}
 }
 

@@ -4,16 +4,15 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/YotpoLtd/resec/resec/consul"
 	"github.com/YotpoLtd/resec/resec/redis"
 	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/davecgh/go-spew/spew"
 	log "github.com/sirupsen/logrus"
-)
-
-var (
-	wg sync.WaitGroup
+	"gopkg.in/d4l3k/messagediff.v1"
 )
 
 const (
@@ -46,6 +45,7 @@ type Reconciler struct {
 	redisState             state.Redis           // Latest (cached) Redis state
 	redisStateCh           <-chan state.Redis    // Read-only channel to get Redis state updates
 	signalCh               chan os.Signal        // signal channel (OS / signal shutdown)
+	debugSignalCh          chan os.Signal        // signal channel (OS / signal shutdown)
 	stopCh                 chan interface{}      // stop channel (internal shutdown)s
 	sync.Mutex
 }
@@ -79,6 +79,16 @@ func (r *Reconciler) Run() {
 			fmt.Println("")
 			r.logger.Info("Caught signal, stopping reconsiler loop")
 			go r.stop()
+
+		case sig := <-r.debugSignalCh:
+			if sig == syscall.SIGUSR1 {
+				spew.Dump(r.consulState)
+				spew.Dump(r.redisState)
+			}
+
+			if sig == syscall.SIGUSR2 {
+				spew.Dump(r)
+			}
 
 		// stop the infinite loop
 		case <-r.stopCh:
@@ -209,6 +219,7 @@ func (r *Reconciler) stateReader() {
 
 			r.Lock()
 			r.logger.Debug("New Redis state")
+			r.diffState(r.redisState, redis)
 			r.redisState = redis
 			r.reconcile = true
 			f.Reset(r.forceReconcileInterval)
@@ -223,6 +234,7 @@ func (r *Reconciler) stateReader() {
 
 			r.Lock()
 			r.logger.Debug("New Consul state")
+			r.diffState(r.consulState, consul)
 			r.consulState = consul
 			r.reconcile = true
 			f.Reset(r.forceReconcileInterval)
@@ -295,6 +307,8 @@ func (r *Reconciler) notSlaveOfCurrentMaster() bool {
 
 // stop will ensure consul and redis will gracefully stop
 func (r *Reconciler) stop() {
+	var wg sync.WaitGroup
+
 	wg.Add(3)
 
 	r.logger.Debugf("Consul Cleanup started ")
@@ -335,4 +349,21 @@ func (r *Reconciler) stop() {
 func (r *Reconciler) timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
 	r.logger.Debugf("%s took %s", name, elapsed)
+}
+
+func (r *Reconciler) diffState(a, b interface{}) {
+	d, equal := messagediff.DeepDiff(a, b)
+	if equal {
+		return
+	}
+
+	for path, added := range d.Added {
+		r.logger.Debugf("added: %s = %#v", path.String(), added)
+	}
+	for path, removed := range d.Removed {
+		r.logger.Debugf("removed: %s = %#v", path.String(), removed)
+	}
+	for path, modified := range d.Modified {
+		r.logger.Debugf("modified: %s = %#v", path.String(), modified)
+	}
 }

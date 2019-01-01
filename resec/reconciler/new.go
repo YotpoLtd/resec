@@ -32,9 +32,11 @@ func NewReconciler(c *cli.Context) (*Reconciler, error) {
 		redisStateCh:           redisConnection.StateChReader(),
 		signalCh:               make(chan os.Signal, 1),
 		stopCh:                 make(chan interface{}, 1),
+		debugSignalCh:          make(chan os.Signal, 1),
 	}
 
 	signal.Notify(reconsiler.signalCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
+	signal.Notify(reconsiler.debugSignalCh, syscall.SIGUSR1, syscall.SIGUSR2)
 	go redisConnection.CommandRunner()
 	go consulConnection.CommandRunner()
 

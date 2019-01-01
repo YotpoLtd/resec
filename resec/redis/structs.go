@@ -7,13 +7,14 @@ import (
 )
 
 type Manager struct {
-	logger    *log.Entry       // logging specificall for Redis
-	client    *redis.Client    // redis client
-	config    *Config          // redis config
-	state     *state.Redis     // redis state
-	stateCh   chan state.Redis // redis state channel to publish updates to the reconciler
-	commandCh chan Command
-	stopCh    chan interface{}
+	logger         *log.Entry       // logging specificall for Redis
+	client         *redis.Client    // redis client
+	config         *Config          // redis config
+	state          *state.Redis     // redis state
+	stateCh        chan state.Redis // redis state channel to publish updates to the reconciler
+	commandCh      chan Command
+	stopCh         chan interface{}
+	watcherRunning bool
 }
 
 type Config struct {

@@ -84,7 +84,7 @@ func (m *Manager) acquireConsulLeadership() {
 	var err error
 	m.config.lock, err = m.client.LockOpts(lockOptions)
 	if err != nil {
-		m.logger.Error("Failed create lock options: %+v", err)
+		m.logger.Errorf("Failed create lock options: %+v", err)
 		return
 	}
 
@@ -229,8 +229,8 @@ func (m *Manager) registerService(redisState state.Redis) {
 		ID:        m.config.checkID,
 		ServiceID: m.config.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL:    m.config.serviceTTL.String(),
-			Status: "warning",
+			TTL:                            m.config.serviceTTL.String(),
+			Status:                         "warning",
 			DeregisterCriticalServiceAfter: m.config.deregisterServiceAfter.String(),
 		},
 	}

@@ -1,3 +1,4 @@
 vendor/
 .vs/
 dump.rdb
+/build/resec

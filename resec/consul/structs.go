@@ -26,7 +26,7 @@ type Manager struct {
 
 // Consul config used for internal state management
 type config struct {
-	announceAddr             string              // address (IP:port) to announce to Consul
+	redisAddr                string              // actual redis address of this node used for master/slave reporting inside redis
 	announceHost             string              // host (IP) to announce to Consul
 	announcePort             int                 // port to announce to Consul
 	checkID                  string              // consul check ID

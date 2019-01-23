@@ -1,6 +1,7 @@
 package consul
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,7 +201,7 @@ func (m *Manager) registerService(redisState state.Redis) {
 	serviceID := m.getConsulServiceID()
 	replicationStatus := m.getReplicationStatus()
 
-	m.config.serviceID = serviceID + "@" + m.config.announceAddr
+	m.config.serviceID = serviceID + "@" + m.config.redisAddr
 	m.config.checkID = m.config.serviceID + ":replication-status-check"
 
 	serviceInfo := &consulapi.AgentServiceRegistration{
@@ -322,13 +323,25 @@ func (m *Manager) watchConsulMasterService() {
 
 			master := services[0]
 
-			if m.state.MasterAddr == master.Node.Address && m.state.MasterPort == master.Service.Port {
+			parts := strings.Split(master.Service.ID, "@")
+			if (len(parts) != 2) {
+				m.logger.Error("Couldn't parse master address found in Consul catalog")
+				continue
+			}
+			masterHost := strings.Split(parts[1], ":")[0]
+			masterPort, err := strconv.Atoi(strings.Split(parts[1], ":")[1])
+			if err != nil {
+				m.logger.Error("Couldn't parse master address found in Consul catalog")
+				continue
+			}
+
+			if m.state.MasterAddr == masterHost && m.state.MasterPort == masterPort {
 				m.logger.Debugf("No change in master service configuration")
 				continue
 			}
 
-			m.state.MasterAddr = master.Node.Address
-			m.state.MasterPort = master.Service.Port
+			m.state.MasterAddr = masterHost
+			m.state.MasterPort = masterPort
 			m.emit()
 
 			m.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", m.state.MasterAddr, m.state.MasterPort)

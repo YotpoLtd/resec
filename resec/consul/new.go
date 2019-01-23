@@ -58,17 +58,17 @@ func NewConnection(c *cli.Context, redisConfig redis.Config) (*Manager, error) {
 		redisHost := strings.Split(redisConfig.Address, ":")[0]
 		redisPort := strings.Split(redisConfig.Address, ":")[1]
 		if redisHost == "127.0.0.1" || redisHost == "localhost" || redisHost == "::1" {
-			consulConfig.announceAddr = ":" + redisPort
+			announceAddr = ":" + redisPort
 		} else {
-			consulConfig.announceAddr = redisConfig.Address
+			announceAddr = redisConfig.Address
 		}
 	}
 
 	var err error
-	consulConfig.announceHost = strings.Split(consulConfig.announceAddr, ":")[0]
-	consulConfig.announcePort, err = strconv.Atoi(strings.Split(consulConfig.announceAddr, ":")[1])
+	consulConfig.announceHost = strings.Split(announceAddr, ":")[0]
+	consulConfig.announcePort, err = strconv.Atoi(strings.Split(announceAddr, ":")[1])
 	if err != nil {
-		return nil, fmt.Errorf("Trouble extracting port number from [%s]", redisConfig.Address)
+		return nil, fmt.Errorf("Trouble extracting port number from [%s]", announceAddr)
 	}
 
 	instance := &Manager{

@@ -322,12 +322,12 @@ func (m *Manager) watchConsulMasterService() {
 
 			master := services[0]
 
-			if m.state.MasterAddr == master.Node.Address && m.state.MasterPort == master.Service.Port {
+			if m.state.MasterAddr == master.Service.Address && m.state.MasterPort == master.Service.Port {
 				m.logger.Debugf("No change in master service configuration")
 				continue
 			}
 
-			m.state.MasterAddr = master.Node.Address
+			m.state.MasterAddr = master.Service.Address
 			m.state.MasterPort = master.Service.Port
 			m.emit()
 

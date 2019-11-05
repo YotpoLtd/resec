@@ -281,9 +281,10 @@ func (m *Manager) watchConsulMasterService() {
 
 	q := &consulapi.QueryOptions{
 		WaitIndex: 0,
-		WaitTime:  time.Second,
+		WaitTime:  30 * time.Second,
 	}
 
+	// How often we should force a refresh of external state?
 	duration := 250 * time.Millisecond
 	timer := time.NewTimer(duration)
 

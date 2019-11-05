@@ -145,7 +145,7 @@ func (m *Manager) watchStatus() {
 		}
 
 		// If we get to here, and we haven't marked our self as ready yet,
-		// lets do so now so the reconsiler will start working
+		// lets do so now so the reconciler will start working
 		if m.state.Ready == false {
 			m.state.Ready = true
 		}

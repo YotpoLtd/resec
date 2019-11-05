@@ -61,7 +61,7 @@ func (r *Reconciler) sendConsulCommand(cmd consul.CommandName) {
 
 // Run starts the procedure
 func (r *Reconciler) Run() {
-	r.logger = log.WithField("system", "reconciler")
+	r.logger = log.WithField("system", "reconciler").WithField("state", ResultUnknown)
 
 	go r.stateReader()
 
@@ -71,12 +71,15 @@ func (r *Reconciler) Run() {
 	// how long to wait between forced renconcile (e.g. to keep TTL happy)
 	f := time.NewTimer(r.forceReconcileInterval)
 
+	// Default
+	currentState := ResultUnknown
+
 	for {
 		select {
 		// signal handler
 		case <-r.signalCh:
 			fmt.Println("")
-			r.logger.Info("Caught signal, stopping reconsiler loop")
+			r.logger.Warn("Caught signal, stopping reconciler loop")
 			go r.stop()
 
 		case sig := <-r.debugSignalCh:
@@ -86,7 +89,7 @@ func (r *Reconciler) Run() {
 			}
 
 			if sig == syscall.SIGUSR2 {
-				r.logger.WithField("dump_state", "reconsiler").Warn(r.prettyPrint(r))
+				r.logger.WithField("dump_state", "reconciler").Warn(r.prettyPrint(r))
 			}
 
 		// we fake state change to ensure we reconcile periodically
@@ -99,11 +102,20 @@ func (r *Reconciler) Run() {
 			r.logger.Info("Shutdown requested, stopping reconciler loop")
 			return
 
+		// evaluate state and reconcile the systems in control
 		case <-r.reconcileCh:
-			outcome := r.evaluate()
+			newState := r.evaluate()
+			if currentState == newState {
+				continue
+			}
+
+			r.logger = r.logger.WithField("state", newState)
+
 			r.logger.
-				WithField("reconsiler_result", outcome).
-				Debug("Reconsiler completed")
+				WithField("old_state", currentState).
+				Infof("Reconciler state transitioned from '%s' to '%s'", currentState, newState)
+
+			currentState = newState
 		}
 	}
 }
@@ -113,7 +125,7 @@ func (r *Reconciler) evaluate() resultType {
 	r.Lock()
 	defer r.Unlock()
 
-	defer r.timeTrack(time.Now(), "reconsiler")
+	defer r.timeTrack(time.Now(), "reconciler")
 
 	// do we have the initial state to start reconciliation
 	if r.missingInitialState() {
@@ -214,9 +226,11 @@ func (r *Reconciler) stateReader() {
 
 			r.Lock()
 			r.logger.Debug("New Redis state")
-			r.diffState(r.redisState, redis)
-			r.redisState = redis
-			r.reconcileCh <- true
+			changed := r.diffState(r.redisState, redis)
+			if changed {
+				r.redisState = redis
+				r.reconcileCh <- true
+			}
 			r.Unlock()
 
 		// New Consul state change
@@ -228,9 +242,11 @@ func (r *Reconciler) stateReader() {
 
 			r.Lock()
 			r.logger.Debug("New Consul state")
-			r.diffState(r.consulState, consul)
-			r.consulState = consul
-			r.reconcileCh <- true
+			changed := r.diffState(r.consulState, consul)
+			if changed {
+				r.consulState = consul
+				r.reconcileCh <- true
+			}
 			r.Unlock()
 		}
 	}
@@ -344,10 +360,10 @@ func (r *Reconciler) timeTrack(start time.Time, name string) {
 	r.logger.Debugf("%s took %s", name, elapsed)
 }
 
-func (r *Reconciler) diffState(a, b interface{}) {
+func (r *Reconciler) diffState(a, b interface{}) bool {
 	d, equal := messagediff.DeepDiff(a, b)
 	if equal {
-		return
+		return false
 	}
 
 	for path, added := range d.Added {
@@ -359,6 +375,8 @@ func (r *Reconciler) diffState(a, b interface{}) {
 	for path, modified := range d.Modified {
 		r.logger.Debugf("modified: %s = %#v", path.String(), modified)
 	}
+
+	return true
 }
 
 func (r *Reconciler) prettyPrint(data interface{}) string {

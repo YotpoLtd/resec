@@ -185,7 +185,7 @@ WantedBy=multi-user.target
 
 ### Dump state via signal
 
-If you send `USR1` signal to Resec, it will dump the state of the reconsiler to `stdout` no matter the log level you started Resec with.
+If you send `USR1` signal to Resec, it will dump the state of the reconciler to `stdout` no matter the log level you started Resec with.
 
 For exampel running `killall -USR1 resec` will yield logging output shown below
 
@@ -215,7 +215,7 @@ For exampel running `killall -USR1 resec` will yield logging output shown below
 }
 ```
 
-if you send `USR2` signal to Resec, it will dump the full reconsiler state + all related structs managed by the reconsiler.
+if you send `USR2` signal to Resec, it will dump the full reconciler state + all related structs managed by the reconciler.
 
 For example running `killall -USR2 resec` will yield logging output shown below
 

@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/YotpoLtd/resec/resec/consul"
 	"github.com/YotpoLtd/resec/resec/redis"
@@ -26,13 +25,13 @@ func NewReconciler(c *cli.Context) (*Reconciler, error) {
 	reconsiler := &Reconciler{
 		consulCommandCh:        consulConnection.GetCommandWriter(),
 		consulStateCh:          consulConnection.GetStateReader(),
+		debugSignalCh:          make(chan os.Signal, 1),
 		forceReconcileInterval: c.Duration("healthcheck-timeout"),
-		reconcileInterval:      100 * time.Millisecond,
+		reconcileCh:            make(chan interface{}, 10),
 		redisCommandCh:         redisConnection.CommandChWriter(),
 		redisStateCh:           redisConnection.StateChReader(),
 		signalCh:               make(chan os.Signal, 1),
 		stopCh:                 make(chan interface{}, 1),
-		debugSignalCh:          make(chan os.Signal, 1),
 	}
 
 	signal.Notify(reconsiler.signalCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)

@@ -37,16 +37,15 @@ type Reconciler struct {
 	consulCommandCh        chan<- consul.Command // Write-only channel to request Consul actions to be taken
 	consulState            state.Consul          // Latest (cached) Consul state
 	consulStateCh          <-chan state.Consul   // Read-only channel to get Consul state updates
+	debugSignalCh          chan os.Signal        // signal channel (OS / signal shutdown)
 	forceReconcileInterval time.Duration         // How often we should force reconcile
 	logger                 *log.Entry            // reconciler logger
-	reconcile              bool                  // Used to track if any state has been updated
-	reconcileInterval      time.Duration         // how often we should evaluate our state
+	reconcileCh            chan interface{}      // Channel to trigger a reconcile loop
 	redisCommandCh         chan<- redis.Command  // Write-only channel to request Redis actions to be taken
 	redisState             state.Redis           // Latest (cached) Redis state
 	redisStateCh           <-chan state.Redis    // Read-only channel to get Redis state updates
 	signalCh               chan os.Signal        // signal channel (OS / signal shutdown)
-	debugSignalCh          chan os.Signal        // signal channel (OS / signal shutdown)
-	stopCh                 chan interface{}      // stop channel (internal shutdown)s
+	stopCh                 chan interface{}      // stop channel (internal shutdown)
 	sync.Mutex
 }
 
@@ -69,8 +68,8 @@ func (r *Reconciler) Run() {
 	r.sendConsulCommand(consul.StartCommand)
 	r.sendRedisCommand(redis.StartCommand)
 
-	// how frequenty to reconcile when redis/consul state changes
-	t := time.NewTicker(r.reconcileInterval)
+	// how long to wait between forced renconcile (e.g. to keep TTL happy)
+	f := time.NewTimer(r.forceReconcileInterval)
 
 	for {
 		select {
@@ -90,27 +89,31 @@ func (r *Reconciler) Run() {
 				r.logger.WithField("dump_state", "reconsiler").Warn(r.prettyPrint(r))
 			}
 
+		// we fake state change to ensure we reconcile periodically
+		case <-f.C:
+			r.reconcileCh <- true
+			f.Reset(r.forceReconcileInterval)
+
 		// stop the infinite loop
 		case <-r.stopCh:
 			r.logger.Info("Shutdown requested, stopping reconciler loop")
 			return
 
-		case <-t.C:
-			r.Lock()
-			r.evaluate()
-			r.Unlock()
+		case <-r.reconcileCh:
+			outcome := r.evaluate()
+			r.logger.
+				WithField("reconsiler_result", outcome).
+				Infof("Reconsiler result: %s", outcome)
 		}
 	}
 }
 
 func (r *Reconciler) evaluate() resultType {
-	// No new state since last, doing nothing
-	if r.reconcile == false {
-		return ResultSkip
-	}
-	defer r.timeTrack(time.Now(), "reconsiler")
+	// Make sure the state doesn't change half-way through our evaluation
+	r.Lock()
+	defer r.Unlock()
 
-	r.reconcile = false
+	defer r.timeTrack(time.Now(), "reconsiler")
 
 	// do we have the initial state to start reconciliation
 	if r.missingInitialState() {
@@ -195,20 +198,12 @@ func (r *Reconciler) evaluate() resultType {
 }
 
 func (r *Reconciler) stateReader() {
-	// how long to wait between forced renconcile (e.g. to keep TTL happy)
-	f := time.NewTimer(r.forceReconcileInterval)
-
 	for {
 		select {
 		// stop the infinite loop
 		case <-r.stopCh:
 			r.logger.Info("Shutdown requested, stopping state loop")
 			return
-
-		// we fake state change to ensure we reconcile periodically
-		case <-f.C:
-			r.reconcile = true
-			f.Reset(r.forceReconcileInterval)
 
 		// New redis state change
 		case redis, ok := <-r.redisStateCh:
@@ -221,8 +216,7 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Redis state")
 			r.diffState(r.redisState, redis)
 			r.redisState = redis
-			r.reconcile = true
-			f.Reset(r.forceReconcileInterval)
+			r.reconcileCh <- true
 			r.Unlock()
 
 		// New Consul state change
@@ -236,8 +230,7 @@ func (r *Reconciler) stateReader() {
 			r.logger.Debug("New Consul state")
 			r.diffState(r.consulState, consul)
 			r.consulState = consul
-			r.reconcile = true
-			f.Reset(r.forceReconcileInterval)
+			r.reconcileCh <- true
 			r.Unlock()
 		}
 	}
@@ -383,8 +376,6 @@ func (r *Reconciler) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{
 		"consulState":            r.consulState,
 		"forceReconcileInterval": r.forceReconcileInterval,
-		"reconcile":              r.reconcile,
-		"reconcileInterval":      r.reconcileInterval,
 		"redisState":             r.redisState,
 	})
 }

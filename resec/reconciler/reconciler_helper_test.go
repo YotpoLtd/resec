@@ -71,7 +71,6 @@ func (h *helper) expectConsulCommands(commands ...consul.CommandName) *helper {
 // eval will trigger a reconsiler evaluation and assert the result matches the
 // configured expectations (expectRedisCommands / expectConsulCommands)
 func (h *helper) eval(expectedResult resultType) {
-	h.reconciler.reconcile = true
 	actualResult := h.reconciler.evaluate()
 
 	assert.EqualValues(h.t, string(expectedResult), string(actualResult))
@@ -109,7 +108,6 @@ func newTestReconsiler(t *testing.T) *helper {
 		consulCommandCh:        consulCommandCh,
 		consulStateCh:          consulStateCh,
 		forceReconcileInterval: 5 * time.Millisecond,
-		reconcileInterval:      time.Millisecond,
 		redisCommandCh:         redisCommandCh,
 		redisStateCh:           redisStateCh,
 		signalCh:               make(chan os.Signal, 0),

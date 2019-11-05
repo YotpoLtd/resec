@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -10,7 +11,6 @@ import (
 	"github.com/YotpoLtd/resec/resec/consul"
 	"github.com/YotpoLtd/resec/resec/redis"
 	"github.com/YotpoLtd/resec/resec/state"
-	"github.com/davecgh/go-spew/spew"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/d4l3k/messagediff.v1"
 )
@@ -82,12 +82,12 @@ func (r *Reconciler) Run() {
 
 		case sig := <-r.debugSignalCh:
 			if sig == syscall.SIGUSR1 {
-				spew.Dump(r.consulState)
-				spew.Dump(r.redisState)
+				r.logger.WithField("dump_state", "consul").Warn(r.prettyPrint(r.consulState))
+				r.logger.WithField("dump_state", "redis").Warn(r.prettyPrint(r.redisState))
 			}
 
 			if sig == syscall.SIGUSR2 {
-				spew.Dump(r)
+				r.logger.WithField("dump_state", "reconsiler").Warn(r.prettyPrint(r))
 			}
 
 		// stop the infinite loop
@@ -366,4 +366,25 @@ func (r *Reconciler) diffState(a, b interface{}) {
 	for path, modified := range d.Modified {
 		r.logger.Debugf("modified: %s = %#v", path.String(), modified)
 	}
+}
+
+func (r *Reconciler) prettyPrint(data interface{}) string {
+	var p []byte
+	p, err := json.MarshalIndent(data, "", "\t")
+	if err != nil {
+		r.logger.Error(err)
+		return ""
+	}
+
+	return string(p)
+}
+
+func (r *Reconciler) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"consulState":            r.consulState,
+		"forceReconcileInterval": r.forceReconcileInterval,
+		"reconcile":              r.reconcile,
+		"reconcileInterval":      r.reconcileInterval,
+		"redisState":             r.redisState,
+	})
 }

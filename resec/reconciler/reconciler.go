@@ -25,7 +25,6 @@ const (
 	ResultRedisNotHealthy      = resultType("redis_not_healthy")
 	ResultRunAsMaster          = resultType("run_as_master")
 	ResultRunAsSlave           = resultType("run_as_slave")
-	ResultSkip                 = resultType("skip")
 	ResultUnknown              = resultType("unknown")
 	ResultUpdateService        = resultType("consul_update_service")
 )
@@ -78,7 +77,7 @@ func (r *Reconciler) Run() {
 	r.sendRedisCommand(redis.StartCommand)
 
 	// how long to wait between forced renconcile (e.g. to keep TTL happy)
-	f := time.NewTimer(r.forceReconcileInterval)
+	periodicReconcileCh := time.NewTicker(r.forceReconcileInterval)
 
 	// Debounce reconciler update events if they happen in rapid succession
 	debounced := debounce.New(100 * time.Millisecond)
@@ -101,10 +100,9 @@ func (r *Reconciler) Run() {
 				r.logger.WithField("dump_state", "reconciler").Warn(r.prettyPrint(r))
 			}
 
-		// we fake state change to ensure we reconcile periodically
-		case <-f.C:
+		// Trigger a
+		case <-periodicReconcileCh.C:
 			r.reconcileCh <- true
-			f.Reset(r.forceReconcileInterval)
 
 		// stop the infinite loop
 		case <-r.stopCh:
@@ -115,6 +113,9 @@ func (r *Reconciler) Run() {
 		case <-r.reconcileCh:
 			debounced(func() {
 				newState := r.evaluate()
+
+				// always apply the state, even if its the same (for cases like ResultUpdateService)
+				r.apply(newState)
 
 				// If there are no state change, we're done
 				if currentState == newState {
@@ -136,6 +137,47 @@ func (r *Reconciler) Run() {
 	}
 }
 
+func (r *Reconciler) apply(state resultType) {
+	switch state {
+	case ResultMissingState:
+		r.logger.Debug("Not ready to reconcile yet, missing initial state")
+
+	case ResultConsulNotHealthy:
+		r.logger.Debugf("Can't reconcile, Consul is not healthy")
+
+	case ResultRedisNotHealthy:
+		r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
+		r.sendConsulCommand(consul.ReleaseLockCommand)
+		r.sendConsulCommand(consul.DeregisterServiceCommand)
+
+	case ResultUpdateService:
+		r.sendConsulCommand(consul.UpdateServiceCommand)
+
+	case ResultRunAsMaster:
+		r.logger.Info("Configure Redis as master")
+		r.sendRedisCommand(redis.RunAsMasterCommand)
+		r.sendConsulCommand(consul.RegisterServiceCommand)
+
+	case ResultNoMasterElected:
+		r.logger.Warn("Currently no master Redis is elected in Consul catalog, can't enslave local Redis")
+
+	case ResultRunAsSlave:
+		r.logger.Info("Reconfigure Redis as slave")
+		r.sendRedisCommand(redis.RunAsSlaveCommand)
+
+	case ResultMasterSyncInProgress:
+		r.logger.Warn("Master sync in progress, can't serve traffic")
+		r.sendConsulCommand(consul.DeregisterServiceCommand)
+
+	case ResultMasterLinkDown:
+		r.logger.Warn("Master link is down, can't serve traffic")
+		r.sendConsulCommand(consul.DeregisterServiceCommand)
+
+	default:
+		r.logger.Errorf("Unknown state: %s", state)
+	}
+}
+
 func (r *Reconciler) evaluate() resultType {
 	// Make sure the state doesn't change half-way through our evaluation
 	r.Lock()
@@ -145,80 +187,55 @@ func (r *Reconciler) evaluate() resultType {
 
 	// do we have the initial state to start reconciliation
 	if r.missingInitialState() {
-		r.logger.Debug("Not ready to reconcile yet, missing initial state")
 		return ResultMissingState
 	}
 
 	// If Consul is not healthy, we can't make changes to the topology, as
 	// we are unable to update the Consul catalog
 	if r.consulState.IsUnhealhy() {
-		r.logger.Debugf("Can't reconcile, Consul is not healthy")
 		return ResultConsulNotHealthy
 	}
 
 	// If Redis is not healthy, we can't re-configure Redis if need be, so the only
 	// option is to step down as leader (if we are) and remove our Consul service
 	if r.redisState.IsUnhealthy() {
-		r.logger.Debugf("Redis is not healthy, deregister Consul service and don't do any further changes")
-		r.sendConsulCommand(consul.ReleaseLockCommand)
-		r.sendConsulCommand(consul.DeregisterServiceCommand)
 		return ResultRedisNotHealthy
 	}
 
 	// if the Consul Lock is held (aka this instance should be master)
 	if r.consulState.IsMaster() {
-
 		// redis is already configured as master, so just update the consul check
 		if r.redisState.IsRedisMaster() {
-			r.logger.Debug("We are already Consul Master and we run as Redis Master")
-			r.sendConsulCommand(consul.UpdateServiceCommand)
 			return ResultUpdateService
 		}
 
 		// redis is not currently configured as master
-		r.logger.Info("Configure Redis as master")
-		r.sendRedisCommand(redis.RunAsMasterCommand)
-		r.sendConsulCommand(consul.RegisterServiceCommand)
 		return ResultRunAsMaster
 	}
 
 	// if the consul lock is *not* held (aka this instance should be slave)
 	if r.consulState.IsSlave() {
-
 		// can't enslave if there are no known master redis in consul catalog
 		if r.consulState.NoMasterElected() {
-			r.logger.Warn("Currently no master Redis is elected in Consul catalog, can't enslave local Redis")
 			return ResultNoMasterElected
 		}
 
 		// is not following the current Redis master
 		if r.notSlaveOfCurrentMaster() {
-			r.logger.Info("Reconfigure Redis as slave")
-			r.sendRedisCommand(redis.RunAsSlaveCommand)
 			return ResultRunAsSlave
 		}
 
 		// if sycing with redis master, lets wait for it to complete
 		if r.isMasterSyncInProgress() {
-			r.logger.Warn("Master sync in progress, can't serve traffic")
-			r.sendConsulCommand(consul.DeregisterServiceCommand)
 			return ResultMasterSyncInProgress
 		}
 
 		// if master link is down, lets wait for it to come back up
 		if r.isMasterLinkDown() && r.isMasterLinkDownTooLong() {
-			r.logger.Warn("Master link is down, can't serve traffic")
-			r.sendConsulCommand(consul.DeregisterServiceCommand)
 			return ResultMasterLinkDown
 		}
 
-		//
-		// TODO(jippi): consider replication lag
-		//
-
 		// everything is fine, update service ttl
-		r.logger.Debug("We are *not* consul master and correctly enslaved to current master")
-		r.sendConsulCommand(consul.UpdateServiceCommand)
 		return ResultUpdateService
 	}
 

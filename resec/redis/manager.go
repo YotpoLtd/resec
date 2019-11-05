@@ -117,42 +117,54 @@ func (m *Manager) watchStatus() {
 		m.watcherRunning = false
 	}()
 
-	ticker := time.NewTicker(time.Second)
+	interval := time.Second
+	timer := time.NewTimer(interval)
 
-	for ; true; <-ticker.C {
-		result, err := m.client.Info().Result()
-		// any failure will trigger a disconnect event
-		if err != nil {
-			m.state.Healthy = false
+	for {
+		select {
+		case <-timer.C:
+			result, err := m.client.Info().Result()
+			// any failure will trigger a disconnect event
+			if err != nil {
+				m.state.Healthy = false
+				m.emit()
+
+				backoffDuration := m.backoff.Duration()
+				m.logger.Warnf("Redis is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
+				timer.Reset(backoffDuration)
+				continue
+			}
+
+			// Success, reset the backoff counter
+			m.backoff.Reset()
+
+			// Queue next execution
+			timer.Reset(interval)
+
+			// if we previously was disconnected, but now succeded again, emit a (re)connected event
+			if m.state.Healthy == false {
+				m.state.Healthy = true
+				m.emit()
+			}
+
+			info := m.parseInfoResult(result)
+
+			// compare current and new state, if no changes, don't publish
+			// a new state to the reconciler
+			if info.Changed(m.state.Info) == false {
+				continue
+			}
+
+			// If we get to here, and we haven't marked our self as ready yet,
+			// lets do so now so the reconciler will start working
+			if m.state.Ready == false {
+				m.state.Ready = true
+			}
+
+			m.state.Info = info
+			m.state.InfoString = result
 			m.emit()
-
-			m.logger.Errorf("Can't connect to redis: %+v", err)
-			continue
 		}
-
-		// if we previously was disconnected, but now succeded again, emit a (re)connected event
-		if m.state.Healthy == false {
-			m.state.Healthy = true
-			m.emit()
-		}
-
-		info := m.parseInfoResult(result)
-
-		// compare current and new state, if no changes, don't publish
-		// a new state to the reconciler
-		if info.Changed(m.state.Info) == false {
-			continue
-		}
-
-		// If we get to here, and we haven't marked our self as ready yet,
-		// lets do so now so the reconciler will start working
-		if m.state.Ready == false {
-			m.state.Ready = true
-		}
-
-		m.state.Info = info
-		m.state.InfoString = result
-		m.emit()
 	}
 }
 

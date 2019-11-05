@@ -3,10 +3,12 @@ package redis
 import (
 	"github.com/YotpoLtd/resec/resec/state"
 	"github.com/go-redis/redis"
+	"github.com/jpillora/backoff"
 	log "github.com/sirupsen/logrus"
 )
 
 type Manager struct {
+	backoff        *backoff.Backoff // exponential backoff helper
 	logger         *log.Entry       // logging specificall for Redis
 	client         *redis.Client    // redis client
 	config         *Config          // redis config

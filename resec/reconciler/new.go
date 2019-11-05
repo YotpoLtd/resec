@@ -36,6 +36,7 @@ func NewReconciler(c *cli.Context) (*Reconciler, error) {
 
 	signal.Notify(reconsiler.signalCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 	signal.Notify(reconsiler.debugSignalCh, syscall.SIGUSR1, syscall.SIGUSR2)
+
 	go redisConnection.CommandRunner()
 	go consulConnection.CommandRunner()
 

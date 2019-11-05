@@ -37,7 +37,7 @@ type Reconciler struct {
 	consulCommandCh        chan<- consul.Command // Write-only channel to request Consul actions to be taken
 	consulState            state.Consul          // Latest (cached) Consul state
 	consulStateCh          <-chan state.Consul   // Read-only channel to get Consul state updates
-	debugSignalCh          chan os.Signal        // signal channel (OS / signal shutdown)
+	debugSignalCh          chan os.Signal        // signal channel (OS / signal debug state)
 	forceReconcileInterval time.Duration         // How often we should force reconcile
 	logger                 *log.Entry            // reconciler logger
 	reconcileCh            chan interface{}      // Channel to trigger a reconcile loop
@@ -103,7 +103,7 @@ func (r *Reconciler) Run() {
 			outcome := r.evaluate()
 			r.logger.
 				WithField("reconsiler_result", outcome).
-				Infof("Reconsiler result: %s", outcome)
+				Debug("Reconsiler completed")
 		}
 	}
 }

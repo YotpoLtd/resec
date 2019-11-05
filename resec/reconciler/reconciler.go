@@ -347,20 +347,29 @@ func (r *Reconciler) stop() {
 		redisStopped := false
 		consulStopped := false
 
+		timeoutCh := time.NewTimer(1 * time.Minute)
+		intervalCh := time.NewTicker(1 * time.Second)
+
 		for {
-			if r.redisState.Stopped && redisStopped == false {
-				redisStopped = true
-				wg.Done()
-			}
+			select {
+			case <-timeoutCh.C:
+				r.logger.Fatal("Did not gracefully shut down within 60s, hard quitting")
 
-			if r.consulState.Stopped && consulStopped == false {
-				consulStopped = true
-				wg.Done()
-			}
+			case <-intervalCh.C:
+				if r.redisState.Stopped && redisStopped == false {
+					redisStopped = true
+					wg.Done()
+				}
 
-			if redisStopped && consulStopped {
-				wg.Done()
-				return
+				if r.consulState.Stopped && consulStopped == false {
+					consulStopped = true
+					wg.Done()
+				}
+
+				if redisStopped && consulStopped {
+					wg.Done()
+					return
+				}
 			}
 		}
 	}()

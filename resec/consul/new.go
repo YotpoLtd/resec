@@ -24,7 +24,7 @@ func NewConnection(c *cli.Context, redisConfig redis.Config) (*Manager, error) {
 		lockTTL:                  c.Duration("consul-lock-ttl"),
 		serviceName:              c.String("consul-service-name"),
 		serviceNamePrefix:        c.String("consul-service-prefix"),
-		serviceTTL:               c.Duration("healthcheck-timeout") * 2,
+		serviceTTL:               c.Duration("healthcheck-timeout") * 3,
 		serviceTagsByRole: map[string][]string{
 			"master": make([]string, 0),
 			"slave":  make([]string, 0),

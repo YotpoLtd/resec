@@ -18,7 +18,7 @@
   version = "v1.1.0"
 
 [[projects]]
-  digest = "1:34c6632be33dacedc5acf9f4489cfa64e0d716a55b00e2f6ff839a4437c3f7da"
+  digest = "1:d0d067915c49fe141c73ce159bcc408796e4f3a9d5ad0a972cb2dbde1dc1ae4f"
   name = "github.com/go-redis/redis"
   packages = [
     ".",
@@ -27,20 +27,19 @@
     "internal/hashtag",
     "internal/pool",
     "internal/proto",
-    "internal/singleflight",
     "internal/util",
   ]
   pruneopts = ""
-  revision = "877867d2845fbaf86798befe410b6ceb6f5c29a3"
-  version = "v6.10.2"
+  revision = "7f69d5e32072d151eb6936cbe2306413e8117488"
+  version = "v6.15.6"
 
 [[projects]]
-  digest = "1:92124c79d22ed5d033b38bd2f86be6dc0eae69658762d620db7c7ff6522329fc"
+  digest = "1:e517a4fb63e7467e44600a420863fba5c4c9769d486759fb3c6e04fd071854d9"
   name = "github.com/hashicorp/consul"
   packages = ["api"]
   pruneopts = ""
-  revision = "fb848fc48818f58690db09d14640513aa6bf3c02"
-  version = "v1.0.7"
+  revision = "9be6dfc310ddd54627d698537a98827245185290"
+  version = "v1.6.1"
 
 [[projects]]
   branch = "master"
@@ -81,6 +80,14 @@
   packages = ["."]
   pruneopts = ""
   revision = "b8bc1bf767474819792c23f32d8286a45736f1c6"
+
+[[projects]]
+  digest = "1:bcc46a0fbd9e933087bef394871256b5c60269575bb661935874729c65bbbf60"
+  name = "github.com/mitchellh/mapstructure"
+  packages = ["."]
+  pruneopts = ""
+  revision = "3536a929edddb9a5b34bd6861dc4a9647cb459fe"
+  version = "v1.1.2"
 
 [[projects]]
   digest = "1:256484dbbcd271f9ecebc6795b2df8cad4c458dd0f5fd82a8c2fa0c29f233411"

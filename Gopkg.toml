@@ -22,11 +22,11 @@
 
 [[constraint]]
   name = "github.com/go-redis/redis"
-  version = "6.10.0"
+  version = "6.15.6"
 
 [[constraint]]
   name = "github.com/hashicorp/consul"
-  version = "1.0.6"
+  version = "1.6.1"
 
 [[constraint]]
   name = "gopkg.in/d4l3k/messagediff.v1"

@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  digest = "1:3adb8efb592e15c9f14c8b8381128028a265ad2875cbbfdffb2bdec44ba6d69e"
+  name = "github.com/bep/debounce"
+  packages = ["."]
+  pruneopts = ""
+  revision = "bf07a0f9e25545ee1b5974845f70185f91b72a00"
+  version = "v1.2.0"
+
+[[projects]]
   digest = "1:56c130d885a4aacae1dd9c7b71cfe39912c7ebc1ff7d2b46083c8812996dc43b"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -145,7 +153,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/davecgh/go-spew/spew",
+    "github.com/bep/debounce",
     "github.com/go-redis/redis",
     "github.com/hashicorp/consul/api",
     "github.com/jpillora/backoff",

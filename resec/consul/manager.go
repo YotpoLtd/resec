@@ -53,7 +53,7 @@ func (m *Manager) continuouslyAcquireConsulLeadership() {
 			// if we are not healthy, apply exponential backoff
 			if m.state.Healthy == false {
 				backoffDuration := m.backoff.Duration()
-				m.logger.Warnf("Consul is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
+				m.logger.Errorf("Consul is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
 				timer.Reset(backoffDuration)
 				continue
 			}

@@ -11,6 +11,7 @@ import (
 	"github.com/YotpoLtd/resec/resec/consul"
 	"github.com/YotpoLtd/resec/resec/redis"
 	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/bep/debounce"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/d4l3k/messagediff.v1"
 )
@@ -61,18 +62,26 @@ func (r *Reconciler) sendConsulCommand(cmd consul.CommandName) {
 
 // Run starts the procedure
 func (r *Reconciler) Run() {
-	r.logger = log.WithField("system", "reconciler").WithField("state", ResultUnknown)
+	// Default state
+	currentState := ResultUnknown
 
+	// Configure logger
+	r.logger = log.WithField("system", "reconciler").WithField("state", currentState)
+
+	// Fire up our internal state reader, consuming updates from Consul and Redis
 	go r.stateReader()
 
+	// Start the Consul reader
 	r.sendConsulCommand(consul.StartCommand)
+
+	// Start the Redis reader
 	r.sendRedisCommand(redis.StartCommand)
 
 	// how long to wait between forced renconcile (e.g. to keep TTL happy)
 	f := time.NewTimer(r.forceReconcileInterval)
 
-	// Default
-	currentState := ResultUnknown
+	// Debounce reconciler update events if they happen in rapid succession
+	debounced := debounce.New(100 * time.Millisecond)
 
 	for {
 		select {
@@ -102,20 +111,27 @@ func (r *Reconciler) Run() {
 			r.logger.Info("Shutdown requested, stopping reconciler loop")
 			return
 
-		// evaluate state and reconcile the systems in control
+		// evaluate state and reconcile the systems under control
 		case <-r.reconcileCh:
-			newState := r.evaluate()
-			if currentState == newState {
-				continue
-			}
+			debounced(func() {
+				newState := r.evaluate()
 
-			r.logger = r.logger.WithField("state", newState)
+				// If there are no state change, we're done
+				if currentState == newState {
+					return
+				}
 
-			r.logger.
-				WithField("old_state", currentState).
-				Infof("Reconciler state transitioned from '%s' to '%s'", currentState, newState)
+				// Update the reconciler logger to reflect the new state
+				r.logger = r.logger.WithField("state", newState)
 
-			currentState = newState
+				// Log the reconciler state change
+				r.logger.
+					WithField("old_state", currentState).
+					Infof("Reconciler state transitioned from '%s' to '%s'", currentState, newState)
+
+				// Update current state
+				currentState = newState
+			})
 		}
 	}
 }
@@ -314,7 +330,7 @@ func (r *Reconciler) notSlaveOfCurrentMaster() bool {
 	return false
 }
 
-// stop will ensure consul and redis will gracefully stop
+// stop will ensure Consul and Redis will gracefully stop
 func (r *Reconciler) stop() {
 	var wg sync.WaitGroup
 
@@ -379,6 +395,9 @@ func (r *Reconciler) diffState(a, b interface{}) bool {
 	return true
 }
 
+// prettyPrint will JSON encode the input and return the string
+// we use it to print the internal state of the reconciler when getting
+// the right SIG
 func (r *Reconciler) prettyPrint(data interface{}) string {
 	var p []byte
 	p, err := json.MarshalIndent(data, "", "\t")
@@ -390,6 +409,7 @@ func (r *Reconciler) prettyPrint(data interface{}) string {
 	return string(p)
 }
 
+// Marshalling to JSON is used when sendnig debug signal to the process
 func (r *Reconciler) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{
 		"consulState":            r.consulState,

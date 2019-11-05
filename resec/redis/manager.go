@@ -129,8 +129,9 @@ func (m *Manager) watchStatus() {
 				m.state.Healthy = false
 				m.emit()
 
+				// Lets start backing off in case it's a long standing issue that is going on
 				backoffDuration := m.backoff.Duration()
-				m.logger.Warnf("Redis is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
+				m.logger.Errorf("Redis is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
 				timer.Reset(backoffDuration)
 				continue
 			}

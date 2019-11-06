@@ -1,12 +1,16 @@
 language: go
+
 go:
-- 1.10.x
+  - "1.13"
+
 script:
-- ./gofmtcheck.sh
-- go test -v ./...
-- go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
+  - ./gofmtcheck.sh
+  - go test -v ./...
+  - go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
+
 after_success:
-- zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}
+  - zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}
+
 deploy:
   provider: releases
   skip_cleanup: true

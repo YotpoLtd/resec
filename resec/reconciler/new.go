@@ -3,6 +3,7 @@ package reconciler
 import (
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/YotpoLtd/resec/resec/consul"
@@ -35,7 +36,9 @@ func NewReconciler(c *cli.Context) (*Reconciler, error) {
 	}
 
 	signal.Notify(reconciler.signalCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
-	signal.Notify(reconciler.debugSignalCh, syscall.SIGUSR1, syscall.SIGUSR2)
+	if runtime.GOOS != "windows" {
+		signal.Notify(reconciler.debugSignalCh, syscall.SIGUSR1, syscall.SIGUSR2)
+	}
 
 	go redisConnection.CommandRunner()
 	go consulConnection.CommandRunner()

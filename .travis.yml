@@ -12,7 +12,7 @@ env:
     - CGO_ENABLED=0
     - GO111MODULE=on
     - GOPROXY=https://proxy.golang.org
-    - GOBUILD="linux-amd64 windows-amd64 darwin-amd64"
+    - GOBUILD="linux-amd64 darwin-amd64"
 
 script:
   - ./gofmtcheck.sh

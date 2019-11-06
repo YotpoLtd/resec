@@ -11,6 +11,7 @@
 - Improve Redis and Consul manager logic and state management
 - Make Redis connection handler do backoff like Consul
 - Various code formatting improvements
+- Build macOS and Linux binary on release
 
 ## 0.5.1 (January 16, 2019)
 

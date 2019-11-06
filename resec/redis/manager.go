@@ -131,7 +131,7 @@ func (m *Manager) watchStatus() {
 
 				// Lets start backing off in case it's a long standing issue that is going on
 				backoffDuration := m.backoff.Duration()
-				m.logger.Errorf("Redis is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
+				m.logger.Errorf("Redis is not healthy, going to apply backoff of %s until next attempt: %s", backoffDuration.Round(time.Second).String(), err)
 				timer.Reset(backoffDuration)
 				continue
 			}
@@ -142,26 +142,17 @@ func (m *Manager) watchStatus() {
 			// Queue next execution
 			timer.Reset(interval)
 
-			// if we previously was disconnected, but now succeded again, emit a (re)connected event
-			if m.state.Healthy == false {
-				m.state.Healthy = true
-				m.emit()
-			}
-
+			// Parse the "info" result from Redis
 			info := m.parseInfoResult(result)
 
-			// compare current and new state, if no changes, don't publish
-			// a new state to the reconciler
-			if info.Changed(m.state.Info) == false {
-				continue
-			}
+			// If Redis is loading data from disk, do not mark us as healthy
+			// If Redis is _not_ loading data from disk, we're healthy
+			m.state.Healthy = !info.Loading
 
-			// If we get to here, and we haven't marked our self as ready yet,
-			// lets do so now so the reconciler will start working
-			if m.state.Ready == false {
-				m.state.Ready = true
-			}
+			// Mark Redis as "ready" (e.g. we can connect)
+			m.state.Ready = true
 
+			// Update state with most recent output
 			m.state.Info = info
 			m.state.InfoString = result
 			m.emit()

@@ -72,6 +72,7 @@ func (h *helper) expectConsulCommands(commands ...consul.CommandName) *helper {
 // configured expectations (expectRedisCommands / expectConsulCommands)
 func (h *helper) eval(expectedResult resultType) {
 	actualResult := h.reconciler.evaluate()
+	h.reconciler.apply(actualResult)
 
 	assert.EqualValues(h.t, string(expectedResult), string(actualResult))
 	time.Sleep(5 * time.Millisecond)

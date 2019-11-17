@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/consul"
-	"github.com/YotpoLtd/resec/resec/redis"
-	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/seatgeek/resec/resec/consul"
+	"github.com/seatgeek/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )

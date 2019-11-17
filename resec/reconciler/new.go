@@ -5,8 +5,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/YotpoLtd/resec/resec/consul"
-	"github.com/YotpoLtd/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/consul"
+	"github.com/seatgeek/resec/resec/redis"
 	cli "gopkg.in/urfave/cli.v1"
 )
 

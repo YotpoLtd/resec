@@ -1,4 +1,4 @@
-module github.com/YotpoLtd/resec
+module github.com/seatgeek/resec
 
 go 1.13
 

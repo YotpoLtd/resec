@@ -3,9 +3,9 @@ package consul
 import (
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/state"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/jpillora/backoff"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/consul"
-	"github.com/YotpoLtd/resec/resec/redis"
-	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/seatgeek/resec/resec/consul"
+	"github.com/seatgeek/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/state"
 )
 
 func TestReconciler_RunBecomeMaster(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
-	// initial state, reconsiler can't do any work because it lacks state
+	// initial state, reconciler can't do any work because it lacks state
 	helper.
 		eval(ResultMissingState)
 
@@ -75,12 +75,12 @@ func TestReconciler_RunBecomeMaster(t *testing.T) {
 }
 
 func TestReconciler_UnhealthyConsul(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
 	// with local Redis healthy, and local Consul unhealthy,
-	// the reconsiler should not do any work at all
+	// the reconciler should not do any work at all
 	helper.
 		withRedisState(state.Redis{
 			Ready:   true,
@@ -94,12 +94,12 @@ func TestReconciler_UnhealthyConsul(t *testing.T) {
 }
 
 func TestReconciler_UnhealthyRedis(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
 	// with local Consul healthy, and local Redis unhealthy,
-	// the reconsiler should give up the consul lock (if held) and deregister the service
+	// the reconciler should give up the consul lock (if held) and deregister the service
 	helper.
 		withConsulState(state.Consul{
 			Ready:   true,
@@ -117,12 +117,12 @@ func TestReconciler_UnhealthyRedis(t *testing.T) {
 }
 
 func TestReconciler_SlaveNoMasterElected(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
 	// with local Consul and local Redis healthy, but no cluster elected Consul master
-	// the reconsiler should do no work
+	// the reconciler should do no work
 	helper.
 		withConsulState(state.Consul{
 			Ready:   true,
@@ -136,7 +136,7 @@ func TestReconciler_SlaveNoMasterElected(t *testing.T) {
 }
 
 func TestReconciler_SlaveMasterElected(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
@@ -160,13 +160,13 @@ func TestReconciler_SlaveMasterElected(t *testing.T) {
 }
 
 func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
 	// with local Consul and Redis healthy, but not elected Consul master
 	// and a remote Consul master, which Redis is already enslaved to
-	// the reconsiler should only update the Consul service
+	// the reconciler should only update the Consul service
 	helper.
 		withConsulState(state.Consul{
 			Ready:      true,
@@ -190,14 +190,14 @@ func TestReconciler_SlaveMasterElectedAlready(t *testing.T) {
 }
 
 func TestReconciler_SlaveMasterSyncInProgress(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
 	// with local Consul and Redis healthy, but not elected Consul master
 	// and a remote Consul master, which Redis is already enslaved to
 	// but currently syncing data from master,
-	// the reconsiler should deregister service and wait for sync to complete
+	// the reconciler should deregister service and wait for sync to complete
 	helper.
 		withConsulState(state.Consul{
 			Ready:      true,
@@ -221,7 +221,7 @@ func TestReconciler_SlaveMasterSyncInProgress(t *testing.T) {
 		eval(ResultMasterSyncInProgress)
 }
 func TestReconciler_SlaveMasterLinkDownToolong(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 
@@ -251,7 +251,7 @@ func TestReconciler_SlaveMasterLinkDownToolong(t *testing.T) {
 		eval(ResultMasterLinkDown)
 }
 func TestReconciler_SlaveMasterLinkDownWithinReason(t *testing.T) {
-	helper := newTestReconsiler(t)
+	helper := newTestReconciler(t)
 	helper.consume()
 	defer helper.stop()
 

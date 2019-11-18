@@ -1,4 +1,4 @@
-[![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Go Report Card](https://goreportcard.com/badge/github.com/YotpoLtd/resec)](https://goreportcard.com/report/github.com/YotpoLtd/resec) [![Build Status](https://travis-ci.org/YotpoLtd/resec.svg?branch=master)](https://travis-ci.org/YotpoLtd/resec)
+[![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Go Report Card](https://goreportcard.com/badge/github.com/seatgeek/resec)](https://goreportcard.com/report/github.com/seatgeek/resec) [![Build Status](https://travis-ci.org/seatgeek/resec.svg?branch=master)](https://travis-ci.org/seatgeek/resec)
 
 <p align="center">
   <img src="https://s.gravatar.com/avatar/96b073f48aae741171d137f21c849d84?s=160" alt="Resec - Consul based highly available Redis replication agent" />
@@ -131,7 +131,7 @@ EORC
     task "resec" {
       driver = "docker"
       config {
-        image = "yotpo/resec"
+        image = "seatgeek/resec"
       }
 
       env {
@@ -155,7 +155,7 @@ EORC
 
 ```yaml
 resec:
-  image: yotpo/resec
+  image: seatgeek/resec
   environment:
     - CONSUL_HTTP_ADDR=1.2.3.4:8500
     - REDIS_ADDR=redis:6379
@@ -181,6 +181,172 @@ WantedBy=multi-user.target
 
 ```
 
+## Debugging
+
+### Dump state via signal
+
+If you send `USR1` signal to Resec, it will dump the state of the reconciler to `stdout` no matter the log level you started Resec with.
+
+For exampel running `killall -USR1 resec` will yield logging output shown below
+
+```text
+(state.Consul) {
+ Ready: (bool) true,
+ Healthy: (bool) true,
+ Master: (bool) true,
+ MasterAddr: (string) "",
+ MasterPort: (int) 0,
+ Stopped: (bool) false
+}
+(state.Redis) {
+ Healthy: (bool) false,
+ Ready: (bool) false,
+ Info: (state.RedisStatus) {
+  Role: (string) "",
+  Loading: (bool) false,
+  MasterLinkUp: (bool) false,
+  MasterLinkDownSince: (time.Duration) 0s,
+  MasterSyncInProgress: (bool) false,
+  MasterHost: (string) "",
+  MasterPort: (int) 0
+ },
+ InfoString: (string) "",
+ Stopped: (bool) false
+}
+```
+
+if you send `USR2` signal to Resec, it will dump the full reconciler state + all related structs managed by the reconciler.
+
+For example running `killall -USR2 resec` will yield logging output shown below
+
+```text
+(*reconciler.Reconciler)(0xc0000fc000)({
+ consulCommandCh: (chan<- consul.Command) (cap=10) 0xc00001e660,
+ consulState: (state.Consul) {
+  Ready: (bool) true,
+  Healthy: (bool) true,
+  Master: (bool) true,
+  MasterAddr: (string) "",
+  MasterPort: (int) 0,
+  Stopped: (bool) false
+ },
+ consulStateCh: (<-chan state.Consul) (cap=10) 0xc00001e720,
+ forceReconcileInterval: (time.Duration) 2s,
+ logger: (*logrus.Entry)(0xc00008c9b0)({
+  Logger: (*logrus.Logger)(0xc00008c190)({
+   Out: (*os.File)(0xc00000c020)({
+    file: (*os.file)(0xc00001e180)({
+     pfd: (poll.FD) {
+      fdmu: (poll.fdMutex) {
+       state: (uint64) 0,
+       rsema: (uint32) 0,
+       wsema: (uint32) 0
+      },
+      Sysfd: (int) 2,
+      pd: (poll.pollDesc) {
+       runtimeCtx: (uintptr) <nil>
+      },
+      iovecs: (*[]syscall.Iovec)(<nil>),
+      csema: (uint32) 0,
+      isBlocking: (uint32) 1,
+      IsStream: (bool) true,
+      ZeroReadIsEOF: (bool) true,
+      isFile: (bool) true
+     },
+     name: (string) (len=11) "/dev/stderr",
+     dirinfo: (*os.dirInfo)(<nil>),
+     nonblock: (bool) false,
+     stdoutOrErr: (bool) true
+    })
+   }),
+   Hooks: (logrus.LevelHooks) {
+   },
+   Formatter: (*logrus.TextFormatter)(0xc0000710b0)({
+    ForceColors: (bool) false,
+    DisableColors: (bool) false,
+    DisableTimestamp: (bool) false,
+    FullTimestamp: (bool) true,
+    TimestampFormat: (string) "",
+    DisableSorting: (bool) false,
+    QuoteEmptyFields: (bool) false,
+    isTerminal: (bool) true,
+    Once: (sync.Once) {
+     m: (sync.Mutex) {
+      state: (int32) 0,
+      sema: (uint32) 0
+     },
+     done: (uint32) 1
+    }
+   }),
+   Level: (logrus.Level) info,
+   mu: (logrus.MutexWrap) {
+    lock: (sync.Mutex) {
+     state: (int32) 0,
+     sema: (uint32) 0
+    },
+    disabled: (bool) false
+   },
+   entryPool: (sync.Pool) {
+    noCopy: (sync.noCopy) {
+    },
+    local: (unsafe.Pointer) 0xc0000e0600,
+    localSize: (uintptr) 0xc,
+    New: (func() interface {}) <nil>
+   }
+  }),
+  Data: (logrus.Fields) (len=1) {
+   (string) (len=6) "system": (string) (len=10) "reconciler"
+  },
+  Time: (time.Time) 0001-01-01 00:00:00 +0000 UTC,
+  Level: (logrus.Level) panic,
+  Message: (string) "",
+  Buffer: (*bytes.Buffer)(<nil>)
+ }),
+ reconcile: (bool) false,
+ reconcileInterval: (time.Duration) 100ms,
+ redisCommandCh: (chan<- redis.Command) (cap=10) 0xc00001e4e0,
+ redisState: (state.Redis) {
+  Healthy: (bool) false,
+  Ready: (bool) false,
+  Info: (state.RedisStatus) {
+   Role: (string) "",
+   Loading: (bool) false,
+   MasterLinkUp: (bool) false,
+   MasterLinkDownSince: (time.Duration) 0s,
+   MasterSyncInProgress: (bool) false,
+   MasterHost: (string) "",
+   MasterPort: (int) 0
+  },
+  InfoString: (string) "",
+  Stopped: (bool) false
+ },
+ redisStateCh: (<-chan state.Redis) (cap=10) 0xc00001e480,
+ signalCh: (chan os.Signal) (cap=1) 0xc00001e840,
+ debugSignalCh: (chan os.Signal) (cap=1) 0xc00001e900,
+ stopCh: (chan interface {}) (cap=1) 0xc00001e8a0,
+ Mutex: (sync.Mutex) {
+  state: (int32) 0,
+  sema: (uint32) 0
+ }
+})
+```
+
+### Tracking state changing via logging
+
+If you run `resec` with `LOG_LEVEL=debug`, there will be a log line for each Consul/Redis state change the reconsider sees.
+
+Example can be seen below
+
+```text
+DEBU[2019-01-01T16:18:01+01:00] New Consul state                              system=reconciler
+DEBU[2019-01-01T16:18:01+01:00] modified: .Master = false                     system=reconciler
+DEBU[2019-01-01T16:17:56+01:00] New Redis state                               system=reconciler
+DEBU[2019-01-01T16:17:56+01:00] modified: .Healthy = true                     system=reconciler
+DEBU[2019-01-01T16:17:56+01:00] New Redis state                               system=reconciler
+DEBU[2019-01-01T16:17:56+01:00] modified: .Ready = true                       system=reconciler
+DEBU[2019-01-01T16:17:56+01:00] modified: .Info.Role = "master"               system=reconciler
+```
+
 ## Copyright and license
 
-Code released under the [MIT license](https://github.com/YotpoLtd/ReSeC/blob/master/LICENSE).
+Code released under the [MIT license](https://github.com/seatgeek/ReSeC/blob/master/LICENSE).

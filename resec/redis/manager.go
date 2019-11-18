@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/state"
 	"github.com/go-redis/redis"
+	"github.com/seatgeek/resec/resec/state"
 )
 
 // emit will send a state update to the reconciler
@@ -59,32 +59,39 @@ func (m *Manager) cleanup() {
 	m.emit()
 }
 
-func (m *Manager) start() {
-	go m.watchStatus()
-	m.waitForRedisToBeReady()
-}
-
 func (m *Manager) CommandRunner() {
 	for {
 		select {
 
 		case <-m.stopCh:
+			m.logger.Infof("Shutting down Redis command runner")
 			return
 
 		case payload := <-m.commandCh:
 			switch payload.name {
 			case StartCommand:
-				m.start()
+				go m.watchStatus()
 
 			case StopCommand:
+				m.logger.Infof("Stop command sent to Redis")
 				m.cleanup()
 
 			case RunAsMasterCommand:
+				if !m.state.Ready {
+					m.logger.Warnf("Got 'runAsMaster' command, but Redis is not ready yet - ignoring")
+					continue
+				}
+
 				if err := m.runAsMaster(); err != nil {
 					m.logger.Error(err)
 				}
 
 			case RunAsSlaveCommand:
+				if !m.state.Ready {
+					m.logger.Warnf("Got 'runAsSlave' command, but Redis is not ready yet - ignoring")
+					continue
+				}
+
 				if err := m.runAsSlave(payload.consulState.MasterAddr, payload.consulState.MasterPort); err != nil {
 					m.logger.Error(err)
 					continue
@@ -100,51 +107,55 @@ func (m *Manager) CommandRunner() {
 
 // watchStatus checks redis replication status
 func (m *Manager) watchStatus() {
-	ticker := time.NewTicker(time.Second)
-
-	for ; true; <-ticker.C {
-		result, err := m.client.Info().Result()
-		// any failure will trigger a disconnect event
-		if err != nil {
-			m.state.Healthy = false
-			m.emit()
-
-			m.logger.Errorf("Can't connect to redis: %+v", err)
-			continue
-		}
-
-		// if we previously was disconnected, but now succeded again, emit a (re)connected event
-		if m.state.Healthy == false {
-			m.state.Healthy = true
-			m.emit()
-		}
-
-		info := m.parseInfoResult(result)
-
-		// compare current and new state, if no changes, don't publish
-		// a new state to the reconciler
-		if info.Changed(m.state.Info) == false {
-			continue
-		}
-
-		m.state.Info = info
-		m.state.InfoString = result
-		m.emit()
+	if m.watcherRunning {
+		m.logger.Warn("Trying to start status watcher, but already running, ignoring...")
+		return
 	}
-}
+	m.watcherRunning = true
 
-// waitForRedisToBeReady will check if we got the initial redis state we need
-// for the reconciler to do its job right out of the box
-func (m *Manager) waitForRedisToBeReady() {
-	t := time.NewTicker(500 * time.Millisecond)
+	defer func() {
+		m.watcherRunning = false
+	}()
 
-	for ; true; <-t.C {
-		// if we got replication data from redis, we are ready
-		if m.state.Info.Role != "" && m.state.Info.Loading == false {
+	interval := time.Second
+	timer := time.NewTimer(interval)
+
+	for {
+		select {
+		case <-timer.C:
+			result, err := m.client.Info().Result()
+			// any failure will trigger a disconnect event
+			if err != nil {
+				m.state.Healthy = false
+				m.emit()
+
+				// Lets start backing off in case it's a long standing issue that is going on
+				backoffDuration := m.backoff.Duration()
+				m.logger.Errorf("Redis is not healthy, going to apply backoff of %s until next attempt: %s", backoffDuration.Round(time.Second).String(), err)
+				timer.Reset(backoffDuration)
+				continue
+			}
+
+			// Success, reset the backoff counter
+			m.backoff.Reset()
+
+			// Queue next execution
+			timer.Reset(interval)
+
+			// Parse the "info" result from Redis
+			info := m.parseInfoResult(result)
+
+			// If Redis is loading data from disk, do not mark us as healthy
+			// If Redis is _not_ loading data from disk, we're healthy
+			m.state.Healthy = !info.Loading
+
+			// Mark Redis as "ready" (e.g. we can connect)
 			m.state.Ready = true
-			m.emit()
 
-			return
+			// Update state with most recent output
+			m.state.Info = info
+			m.state.InfoString = result
+			m.emit()
 		}
 	}
 }

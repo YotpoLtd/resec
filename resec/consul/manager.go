@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/state"
 	consulapi "github.com/hashicorp/consul/api"
+	"github.com/seatgeek/resec/resec/state"
 )
 
 // emit will emit a consul state change to the reconciler
@@ -40,7 +40,7 @@ func (m *Manager) continuouslyAcquireConsulLeadership() {
 		case <-m.stopCh:
 			return
 
-		// if consul master service have changes, immidately try to  claim the lock
+		// if consul master service have changes, immediately try to  claim the lock
 		// since there is a good chance the service changed because the current master
 		// went away
 		case <-m.masterCh:
@@ -53,7 +53,7 @@ func (m *Manager) continuouslyAcquireConsulLeadership() {
 			// if we are not healthy, apply exponential backoff
 			if m.state.Healthy == false {
 				backoffDuration := m.backoff.Duration()
-				m.logger.Warnf("Consul is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
+				m.logger.Errorf("Consul is not healthy, going to apply backoff of %s until next attempt", backoffDuration.Round(time.Second).String())
 				timer.Reset(backoffDuration)
 				continue
 			}
@@ -81,25 +81,33 @@ func (m *Manager) acquireConsulLeadership() {
 		MonitorRetryTime: m.config.lockMonitorRetryInterval,
 	}
 
-	var err error
-	m.config.lock, err = m.client.LockOpts(lockOptions)
-	if err != nil {
-		m.logger.Error("Failed create lock options: %+v", err)
-		return
+	// Create the Lock options
+	{
+		var err error
+
+		m.config.lock, err = m.client.LockOpts(lockOptions)
+		if err != nil {
+			m.logger.Errorf("Failed create lock options: %+v", err)
+			return
+		}
 	}
 
 	// try to acquire the lock
-	m.logger.Infof("Trying to acquire consul lock")
-	m.lockErrorCh, err = m.config.lock.Lock(m.lockCh)
-	m.handleConsulError(err)
-	if err != nil {
-		return
+	{
+		var err error
+
+		m.logger.Infof("Trying to acquire consul lock")
+		m.lockErrorCh, err = m.config.lock.Lock(m.lockCh)
+		m.handleConsulError(err)
+		if err != nil {
+			return
+		}
+
+		m.logger.Info("Lock successfully acquired")
+
+		m.state.Master = true
+		m.emit()
 	}
-
-	m.logger.Info("Lock successfully acquired")
-
-	m.state.Master = true
-	m.emit()
 
 	//
 	// start monitoring the consul lock for errors / changes
@@ -229,8 +237,8 @@ func (m *Manager) registerService(redisState state.Redis) {
 		ID:        m.config.checkID,
 		ServiceID: m.config.serviceID,
 		AgentServiceCheck: consulapi.AgentServiceCheck{
-			TTL:    m.config.serviceTTL.String(),
-			Status: "warning",
+			TTL:                            m.config.serviceTTL.String(),
+			Status:                         "warning",
 			DeregisterCriticalServiceAfter: m.config.deregisterServiceAfter.String(),
 		},
 	}
@@ -280,10 +288,11 @@ func (m *Manager) watchConsulMasterService() {
 	serviceName, serviceTag := m.getConsulMasterDetails()
 
 	q := &consulapi.QueryOptions{
-		WaitIndex: 0,
-		WaitTime:  time.Second,
+		WaitIndex: 1,
+		WaitTime:  30 * time.Second,
 	}
 
+	// How often we should force a refresh of external state?
 	duration := 250 * time.Millisecond
 	timer := time.NewTimer(duration)
 
@@ -322,12 +331,12 @@ func (m *Manager) watchConsulMasterService() {
 
 			master := services[0]
 
-			if m.state.MasterAddr == master.Node.Address && m.state.MasterPort == master.Service.Port {
+			if m.state.MasterAddr == master.Service.Address && m.state.MasterPort == master.Service.Port {
 				m.logger.Debugf("No change in master service configuration")
 				continue
 			}
 
-			m.state.MasterAddr = master.Node.Address
+			m.state.MasterAddr = master.Service.Address
 			m.state.MasterPort = master.Service.Port
 			m.emit()
 

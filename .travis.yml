@@ -1,20 +1,27 @@
 language: go
 go:
-- 1.10.x
+- '1.13'
+cache:
+  directories:
+  - "$HOME/gopath/pkg/mod"
+env:
+  global:
+  - CGO_ENABLED=0
+  - GO111MODULE=on
+  - GOPROXY=https://proxy.golang.org
+  - GOBUILD="linux-amd64 darwin-amd64"
 script:
-- ./gofmtcheck.sh
-- go test -v ./...
-- go build -o build/resec_linux_amd64_${TRAVIS_BRANCH}
-after_success:
-- zip -j build/resec_linux_amd64_${TRAVIS_BRANCH}.zip build/resec_linux_amd64_${TRAVIS_BRANCH}
+- "./gofmtcheck.sh"
+- make test
+- make -j build
 deploy:
   provider: releases
   skip_cleanup: true
   api_key:
-    secure: jqxQ6YECY5GYYbgV8rV0HCeXSdbVT/6MV+B+WOO7gdkDvaP63JRGgQdOPcwgfIrvnuqoCGTO/cm5V0JlkaslqI18SUe5q1T1vWeiEMMHYvv63RQVPMNvFmV29XO5H4gdQdia8kiEZ6LfhwIlaAqcf/vEGb4a1Q8Lxvrexvi7VzwtyY7uT2CnJdeqnikBhE3JBSWBzxM5JOrGkiq8olVw7wD9VsqIsZeD3uS78vX25RRdg8xQSTSna7KGFSRJqema1t0HDgQA9w8X4t6nbFOMCagfSVLth9iKV7UcpeHPUkoubzZQPHaK/No+p7EbHrsPjx+i9J0XeMfuDqb2qaymZ/NXO1UBfysl8EViB5rPvWf49OvqQACZgJLa+iTDaWe22OgrIrvNURsTCtqhRL3FBdutiaeh+0JkP3hrKjoRGfcrwoBJcQAY24ztZcC2Zw1z9c/05pg5DO7oL2fJPxKAlRUE7JXBx/of83KkY2I64ZulLfcwwmVPQNcIfq1PCqC7s/AmCueWwsn0qq1grK0uawIlzFD+cg9Zjhk6z+h2AdIsdu4n1tzMLuw+3f12hePm6dorqIstqzZufxTWDZClbE2zbiz1XoE0mSAwD0Ge9UzoJiyNXiBR85REJvZWybNUWr6aJFWWWSkowRtV0splb4bbxxnt5zJx8292746OUCU=
+    secure: XtqF4FkWzHK6UuSvIvPHVwOTswQTVOnEEQdjz9G8daGmaljr94xxVirsKkMLFGCwNDxSMIXAuXGgiOcTkA1csCoygcz1B4zO2gj1Dgp2eYH6FxYGcPUyDdfnGghlJT0HRJK6jgENWIZ/TcR2R7mFXuf7e+4bgbMV6j50YKBcYpr9Q1j0LZH7CCqR8v1WVJIFBJg40jEulW2NnF4OMGVfKACTHCucFLRvbmFQ3PRnR+3i4q0Dn6zAbi5VHX0juFfk4PdhB870CFDByNj1Wz+54erumQyuRH3TDTe0Y7DxASwWqlpgAe/eZsUniuu284+P60Lmb3cOtlv0p/vGn1ouVOenhH6fj589srPrzGjbHs0Pnwcu7l9WSj88pFtdTmntAjEU/rzwvJZiNH6c4ycOiumrp1qozOTGLmJ6H1rXXJiyMUbMTZxFUXnX87yFAOhpJ3cffGPcYjM58rNSAr1mIaDWNTtQuda2wtN1opTayryRKxmNr+11Qk6DXQX5mPjcZLtw8otZkE4FjPoda+09GXPf3vAXszY+bPoDCAnTAwh5yXerW/QC11MqoCQJLWPef+uc6N0PQzHeRTOVoIK7BWLrOR8qY4wir8kQWfJq6NCwM8uKq8EDKAfq3J0w6W5mHO27YiH2KtesAUxVGYOaZ+IKBY6br3KUxbVhddC0pI4=
   file_glob: true
-  file: build/*.zip
+  file: build/*
   on:
-    repo: YotpoLtd/resec
+    repo: seatgeek/resec
     branch: master
     tags: true

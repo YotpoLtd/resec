@@ -5,17 +5,19 @@ import (
 	"sort"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/reconciler"
 	gelf "github.com/seatgeek/logrus-gelf-formatter"
+	"github.com/seatgeek/resec/resec/reconciler"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )
+
+var Version = "local-dev"
 
 func main() {
 	app := cli.NewApp()
 	app.Name = "resec"
 	app.Usage = "Redis cluster manager"
-	app.Version = "x.y.z"
+	app.Version = Version
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/consul"
-	"github.com/YotpoLtd/resec/resec/redis"
-	"github.com/YotpoLtd/resec/resec/state"
+	"github.com/seatgeek/resec/resec/consul"
+	"github.com/seatgeek/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -26,7 +26,7 @@ type helper struct {
 	t                      *testing.T
 }
 
-// consume all consul/redis commands from the reconsiler
+// consume all consul/redis commands from the reconciler
 func (h *helper) consume() {
 	go func() {
 		for {
@@ -42,37 +42,37 @@ func (h *helper) consume() {
 	}()
 }
 
-// withConsulState will change the reconsilers Consul state
+// withConsulState will change the reconcilers Consul state
 func (h *helper) withConsulState(consulState state.Consul) *helper {
 	h.reconciler.consulState = consulState
 	return h
 }
 
-// withRedisState will change the reconsilers Redis state
+// withRedisState will change the reconcilers Redis state
 func (h *helper) withRedisState(redisState state.Redis) *helper {
 	h.reconciler.redisState = redisState
 	return h
 }
 
 // expectRedisCommands sets the expected Redis commands we should see
-// from the reconsiler during an evaluation
+// from the reconciler during an evaluation
 func (h *helper) expectRedisCommands(commands ...redis.CommandName) *helper {
 	h.redisCommandsExpected = commands
 	return h
 }
 
 // expectConsulCommands sets the expected Consul commands we should see
-// from the reconsiler during an evaluation
+// from the reconciler during an evaluation
 func (h *helper) expectConsulCommands(commands ...consul.CommandName) *helper {
 	h.consulCommandsExpected = commands
 	return h
 }
 
-// eval will trigger a reconsiler evaluation and assert the result matches the
+// eval will trigger a reconciler evaluation and assert the result matches the
 // configured expectations (expectRedisCommands / expectConsulCommands)
 func (h *helper) eval(expectedResult resultType) {
-	h.reconciler.reconcile = true
 	actualResult := h.reconciler.evaluate()
+	h.reconciler.apply(actualResult)
 
 	assert.EqualValues(h.t, string(expectedResult), string(actualResult))
 	time.Sleep(5 * time.Millisecond)
@@ -97,8 +97,8 @@ func (h *helper) stop() {
 	close(h.reconciler.stopCh)
 }
 
-// newTestReconsiler will create a new reconsiler for testing purposes
-func newTestReconsiler(t *testing.T) *helper {
+// newTestReconciler will create a new reconciler for testing purposes
+func newTestReconciler(t *testing.T) *helper {
 	consulCommandCh := make(chan consul.Command, 1)
 	consulStateCh := make(chan state.Consul, 1)
 
@@ -109,7 +109,6 @@ func newTestReconsiler(t *testing.T) *helper {
 		consulCommandCh:        consulCommandCh,
 		consulStateCh:          consulStateCh,
 		forceReconcileInterval: 5 * time.Millisecond,
-		reconcileInterval:      time.Millisecond,
 		redisCommandCh:         redisCommandCh,
 		redisStateCh:           redisStateCh,
 		signalCh:               make(chan os.Signal, 0),

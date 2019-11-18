@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/redis"
-	"github.com/YotpoLtd/resec/resec/state"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/jpillora/backoff"
+	"github.com/seatgeek/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )
@@ -24,7 +24,7 @@ func NewConnection(c *cli.Context, redisConfig redis.Config) (*Manager, error) {
 		lockTTL:                  c.Duration("consul-lock-ttl"),
 		serviceName:              c.String("consul-service-name"),
 		serviceNamePrefix:        c.String("consul-service-prefix"),
-		serviceTTL:               c.Duration("healthcheck-timeout") * 2,
+		serviceTTL:               c.Duration("healthcheck-timeout") * 3,
 		serviceTagsByRole: map[string][]string{
 			"master": make([]string, 0),
 			"slave":  make([]string, 0),

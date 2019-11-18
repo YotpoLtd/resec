@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/redis"
-	"github.com/YotpoLtd/resec/resec/state"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/jpillora/backoff"
+	"github.com/seatgeek/resec/resec/redis"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )

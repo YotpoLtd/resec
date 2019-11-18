@@ -41,7 +41,7 @@ services:
       - resec-demo
   
   resec-1: &resec
-    image: yotpo/resec
+    image: seatgeek/resec
     hostname: "resec"
     networks:
       - resec-demo

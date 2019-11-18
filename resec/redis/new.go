@@ -3,9 +3,9 @@ package redis
 import (
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/state"
 	"github.com/go-redis/redis"
 	"github.com/jpillora/backoff"
+	"github.com/seatgeek/resec/resec/state"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )

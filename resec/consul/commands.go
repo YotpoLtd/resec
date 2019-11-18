@@ -1,6 +1,6 @@
 package consul
 
-import "github.com/YotpoLtd/resec/resec/state"
+import "github.com/seatgeek/resec/resec/state"
 
 // list of commands the Consul connection can handle
 const (

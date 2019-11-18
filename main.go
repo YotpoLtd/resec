@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/YotpoLtd/resec/resec/reconciler"
 	gelf "github.com/seatgeek/logrus-gelf-formatter"
+	"github.com/seatgeek/resec/resec/reconciler"
 	log "github.com/sirupsen/logrus"
 	cli "gopkg.in/urfave/cli.v1"
 )

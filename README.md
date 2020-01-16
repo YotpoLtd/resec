@@ -1,10 +1,11 @@
+# Resec - Consul based highly available Redis replication agent
+
 [![Gitter](https://badges.gitter.im/redis-service-consul/Lobby.svg)](https://gitter.im/redis-service-consul/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Go Report Card](https://goreportcard.com/badge/github.com/seatgeek/resec)](https://goreportcard.com/report/github.com/seatgeek/resec) [![Build Status](https://travis-ci.org/seatgeek/resec.svg?branch=master)](https://travis-ci.org/seatgeek/resec)
 
 <p align="center">
   <img src="https://s.gravatar.com/avatar/96b073f48aae741171d137f21c849d84?s=160" alt="Resec - Consul based highly available Redis replication agent" />
 </p>
 
-# Resec - Consul based highly available Redis replication agent
 
 ## Description
 
@@ -22,6 +23,7 @@ Resec continuously monitors the status of redis instance and if it's alive, It s
     * promotes redis to be *SLAVE OF NO ONE*
 
 ### Services and health checks
+
 Resec registers service with [TTL](https://www.consul.io/docs/agent/checkshtml#TTL) health check with TTL twice as big as `HEALTHCHECK_INTERVAL` and updates consul every `HEALTHCHECK_INTERVAL` to maintain service in passing state
 
 There are 2 options to work with services:
@@ -34,7 +36,8 @@ There are 2 options to work with services:
   * If `REDIS_ADDR` is localhost, only port will be announced to the consul.
 
 ### Redis Health
-* If redis becomes unhealthy resec will stop the leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
+
+If redis becomes unhealthy resec will stop the leader election. As soon as redis will become healthy again, resec will start the operation from the beginning.
 
 ## Usage
 
@@ -81,6 +84,10 @@ service "" {
   policy = "write"
 }
 ```
+
+### Development
+
+Please see [the local development guide](https://github.com/seatgeek/resec/blob/master/DEV.md) for information and hints on how to work with Resec locally
 
 ### Run the application
 

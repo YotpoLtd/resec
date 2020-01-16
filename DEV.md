@@ -41,29 +41,26 @@ All the terminal windows should have their current directory (CWD) set to the di
 * Resec 2: `$ resec --consul-master-tags master --consul-service-name redis --consul-slave-tags slave --redis-addr 127.0.0.1:7777`
 
 ```text
-                                                  iTerm 2
-
-+---------------------------------------------------------+--------------------------------------------------+
-|                     tab 1                                                                                  |
-+------------------------------------------------------------------------------------------------------------+
-|                                                         |                                                  |
-|                                                         |                                                  |
-|                     Resec 1                             |                    Redis 1                       |
-|                                                         |                                                  |
-|                                                         |                                                  |
-+------------------------------------------------------------------------------------------------------------+
-|                                                         |                                                  |
-|                                                         |                                                  |
-|                     Resec 2                             |                    Redis 2                       |
-|                                                         |                                                  |
-|                                                         |                                                  |
-+------------------------------------------------------------------------------------------------------------+
-|                                                         |                                                  |
-|                                                         |                                                  |
-|                  Interactive                            |                    Consul                        |
-|                                                         |                                                  |
-|                                                         |                                                  |
-+---------------------------------------------------------+--------------------------------------------------+
+                                iTerm 2
++----------------------------------+---------------------------------+
+|                                  |                                 |
+|                                  |                                 |
+|             Resec 1              |             Redis 1             |
+|                                  |                                 |
+|                                  |                                 |
++--------------------------------------------------------------------+
+|                                  |                                 |
+|                                  |                                 |
+|             Resec 2              |             Redis 2             |
+|                                  |                                 |
+|                                  |                                 |
++--------------------------------------------------------------------+
+|                                  |                                 |
+|                                  |                                 |
+|          Interactive             |             Consul              |
+|                                  |                                 |
+|                                  |                                 |
++----------------------------------+---------------------------------+
 ```
 
 For Consul, I don't use `consul agent -dev` because it does not persist state between runs, which is very useful to test recovery logic in Resec. With `-dev` the cluster would always be empty if you kill Consul, so locking timeouts etc would not work as in real world. That being said, I *also* test in `-dev` mode when doing major work, since a clean slate can also cause interesting races in the code, and better emulate a new Resec cluster being created.

@@ -6,7 +6,6 @@
   <img src="https://s.gravatar.com/avatar/96b073f48aae741171d137f21c849d84?s=160" alt="Resec - Consul based highly available Redis replication agent" />
 </p>
 
-
 ## Description
 
 Resec is a successor to [Redis Sentinel](https://redis.io/topics/sentinel) and [redishappy](https://github.com/mdevilliers/redishappy) for handling high availability failover for Redis.
@@ -16,17 +15,19 @@ It avoids Redis Sentinel problems of remembering all the sentinels and all the r
 Resec master election is based on [Consul Locks](https://www.consul.io/docs/commands/lock.html) to provide single redis master instance.
 
 Resec continuously monitors the status of redis instance and if it's alive, It starts 2 following processes:
+
 * Monitor service of *master* for changes
-    * if lock is not acquired, on every change of master it runs *SLAVE OF `Master.Address`*
+  * if lock is not acquired, on every change of master it runs *SLAVE OF `Master.Address`*
 * Trying to acquire lock to became master itself
-    * once lock acquired it stops watching for master service changes
-    * promotes redis to be *SLAVE OF NO ONE*
+  * once lock acquired it stops watching for master service changes
+  * promotes redis to be *SLAVE OF NO ONE*
 
 ### Services and health checks
 
 Resec registers service with [TTL](https://www.consul.io/docs/agent/checkshtml#TTL) health check with TTL twice as big as `HEALTHCHECK_INTERVAL` and updates consul every `HEALTHCHECK_INTERVAL` to maintain service in passing state
 
 There are 2 options to work with services:
+
 * Use `CONSUL_SERVICE_NAME` for tag based master/slave discovery
   * `MASTER_TAGS` must be provided for ability to watch master instance for changes.
 * Use `CONSUL_SERVICE_PREFIX` for service name only based discovery
@@ -92,6 +93,7 @@ Please see [the local development guide](https://github.com/seatgeek/resec/blob/
 ### Run the application
 
 * with nomad:
+
 ```hcl
 job "resec" {
   datacenters = ["dc1"]
@@ -169,8 +171,9 @@ resec:
   container_name: resec
 ```
 
-* with SystemD:
-```
+* with SystemD
+
+```ini
 [Unit]
 Description=resec - redis ha replication daemon
 Requires=network-online.target
@@ -185,7 +188,6 @@ RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
-
 ```
 
 ## Debugging

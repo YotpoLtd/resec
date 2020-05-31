@@ -336,7 +336,14 @@ func (m *Manager) watchConsulMasterService() {
 				continue
 			}
 
-			m.state.MasterAddr = master.Service.Address
+			// handle If master is registred in consul with port only
+			// Use node IP insted of service IP
+			if master.Service.Address != "" {
+				m.state.MasterAddr = master.Service.Address
+			} else {
+				m.state.MasterAddr = master.Node.Address
+			}
+
 			m.state.MasterPort = master.Service.Port
 			m.emit()
 

@@ -285,6 +285,8 @@ func (m *Manager) getConsulMasterDetails() (serviceName string, serviceTag strin
 // watchConsulMasterService starts watching the service (+ tags) that represents the
 // redis master service. All changes will be emitted to masterConsulServiceCh.
 func (m *Manager) watchConsulMasterService() {
+	logger := m.logger.WithField("func", "watchConsulMasterService")
+
 	serviceName, serviceTag := m.getConsulMasterDetails()
 
 	q := &consulapi.QueryOptions{
@@ -313,26 +315,26 @@ func (m *Manager) watchConsulMasterService() {
 			timer.Reset(duration)
 
 			if q.WaitIndex == meta.LastIndex {
-				m.logger.Debugf("No change in master service health")
+				logger.Debugf("No change in master service health")
 				continue
 			}
 
 			q.WaitIndex = meta.LastIndex
 
 			if len(services) == 0 {
-				m.logger.Warn("No (healthy) master service found in Consul catalog")
+				logger.Warn("No (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			if len(services) > 1 {
-				m.logger.Error("More than 1 (healthy) master service found in Consul catalog")
+				logger.Error("More than 1 (healthy) master service found in Consul catalog")
 				continue
 			}
 
 			master := services[0]
 
 			if m.state.MasterAddr == master.Service.Address && m.state.MasterPort == master.Service.Port {
-				m.logger.Debugf("No change in master service configuration")
+				logger.Debugf("No change in master service configuration")
 				continue
 			}
 
@@ -347,7 +349,7 @@ func (m *Manager) watchConsulMasterService() {
 			m.state.MasterPort = master.Service.Port
 			m.emit()
 
-			m.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", m.state.MasterAddr, m.state.MasterPort)
+			logger.Infof("Saw change in master service. New IP+Port is: %s:%d", m.state.MasterAddr, m.state.MasterPort)
 			m.masterCh <- true
 		}
 	}

@@ -40,12 +40,6 @@ func (m *Manager) continuouslyAcquireConsulLeadership() {
 		case <-m.stopCh:
 			return
 
-		// if consul master service have changes, immediately try to  claim the lock
-		// since there is a good chance the service changed because the current master
-		// went away
-		case <-m.masterCh:
-			m.acquireConsulLeadership()
-
 		// Periodically try to acquire the consul lock
 		case <-timer.C:
 			m.acquireConsulLeadership()
@@ -346,9 +340,6 @@ func (m *Manager) watchConsulMasterService() {
 
 			m.state.MasterPort = master.Service.Port
 			m.emit()
-
-			m.logger.Infof("Saw change in master service. New IP+Port is: %s:%d", m.state.MasterAddr, m.state.MasterPort)
-			m.masterCh <- true
 		}
 	}
 }

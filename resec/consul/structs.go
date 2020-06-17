@@ -17,7 +17,6 @@ type Manager struct {
 	lockCh       <-chan struct{}   // lock channel used by Consul SDK to notify about changes
 	lockErrorCh  <-chan struct{}   // lock error channel used by Consul SDK to notify about errors related to the lock
 	logger       *log.Entry        // logger for the consul connection struct
-	masterCh     chan interface{}  // notification channel used to notify the Consul Lock go-routing that the master service changed
 	state        *state.Consul     // state used by the reconciler
 	stateCh      chan state.Consul // state channel used to notify the reconciler of changes
 	stopCh       chan interface{}  // internal channel used to stop all go-routines when gracefully shutting down

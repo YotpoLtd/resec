@@ -83,7 +83,6 @@ func NewConnection(c *cli.Context, redisConfig redis.Config) (*Manager, error) {
 		commandCh:    make(chan Command, 10),
 		config:       consulConfig,
 		logger:       log.WithField("system", "consul"),
-		masterCh:     make(chan interface{}, 1),
 		stateCh:      make(chan state.Consul, 10),
 		stopCh:       make(chan interface{}, 1),
 		state: &state.Consul{

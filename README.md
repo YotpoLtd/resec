@@ -62,6 +62,7 @@ HEALTHCHECK_TIMEOUT   | 2s             |
 REDIS_ADDR            | 127.0.0.1:6379 |
 REDIS_PASSWORD        |                |
 LOG_LEVEL             | INFO           | Options are "DEBUG", "INFO", "WARN", "ERROR"
+LOG_FORMAT            | text           | Options are "text", "json", "gelf"
 
 ##### Environment variables to configure communication with consul are similar to [Consul CLI](https://www.consul.io/docs/commands/index.html#environment-variables)
 

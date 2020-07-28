@@ -127,7 +127,13 @@ func main() {
 		case "text":
 			log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 		case "json":
-			log.SetFormatter(&log.JSONFormatter{})
+			log.SetFormatter(&log.JSONFormatter{
+				FieldMap: log.FieldMap{
+					log.FieldKeyTime:  "@timestamp",
+					log.FieldKeyLevel: "@level",
+					log.FieldKeyMsg:   "@message",
+				},
+			})
 		case "gelf":
 			log.SetFormatter(&gelf.GelfFormatter{})
 		default:

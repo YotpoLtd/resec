@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	gelf "github.com/seatgeek/logrus-gelf-formatter"
@@ -122,7 +123,7 @@ func main() {
 		}
 		log.SetLevel(level)
 
-		switch c.String("log-format") {
+		switch strings.ToLower(c.String("log-format")) {
 		case "text":
 			log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 		case "json":
@@ -130,7 +131,7 @@ func main() {
 		case "gelf":
 			log.SetFormatter(&gelf.GelfFormatter{})
 		default:
-			log.Fatal("Invalid log format (text, json, gelf)")
+			log.Fatalf("Invalid log format '%s', please use on of [text, json, gelf]", c.String("log-format"))
 		}
 		return nil
 	}

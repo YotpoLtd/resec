@@ -73,7 +73,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "consul-master-tags",
-			Usage:  "Comma separatxed list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
+			Usage:  "Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
 			EnvVar: "MASTER_TAGS",
 		},
 		cli.StringFlag{
@@ -100,7 +100,7 @@ func main() {
 		cli.StringFlag{
 			Name:   "log-format",
 			Value:  "text",
-			Usage:  "Log formst (text, gelf, json)",
+			Usage:  "Log format (text, gelf, json)",
 			EnvVar: "LOG_FORMAT",
 		},
 		cli.StringFlag{

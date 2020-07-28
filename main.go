@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	gelf "github.com/seatgeek/logrus-gelf-formatter"
@@ -73,7 +74,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "consul-master-tags",
-			Usage:  "Comma separatxed list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
+			Usage:  "Comma separated list of tags to be added to master instance. The first tag (index 0) is used to configure the role of the Redis/resec task, and must be different from index 0 in SLAVE_TAGS",
 			EnvVar: "MASTER_TAGS",
 		},
 		cli.StringFlag{
@@ -100,7 +101,7 @@ func main() {
 		cli.StringFlag{
 			Name:   "log-format",
 			Value:  "text",
-			Usage:  "Log formst (text, gelf, json)",
+			Usage:  "Log format (text, gelf, json)",
 			EnvVar: "LOG_FORMAT",
 		},
 		cli.StringFlag{
@@ -122,15 +123,21 @@ func main() {
 		}
 		log.SetLevel(level)
 
-		switch c.String("log-format") {
+		switch strings.ToLower(c.String("log-format")) {
 		case "text":
 			log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 		case "json":
-			log.SetFormatter(&log.JSONFormatter{})
+			log.SetFormatter(&log.JSONFormatter{
+				FieldMap: log.FieldMap{
+					log.FieldKeyTime:  "@timestamp",
+					log.FieldKeyLevel: "@level",
+					log.FieldKeyMsg:   "@message",
+				},
+			})
 		case "gelf":
 			log.SetFormatter(&gelf.GelfFormatter{})
 		default:
-			log.Fatal("Invalid log format (text, json, gelf)")
+			log.Fatalf("Invalid log format '%s', please use on of [text, json, gelf]", c.String("log-format"))
 		}
 		return nil
 	}

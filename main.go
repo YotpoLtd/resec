@@ -34,7 +34,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "consul-lock-key",
-			Usage:  "KV lock location, should be overriden if multiple instances running in the same consul DC",
+			Usage:  "KV lock location, should be overridden if multiple instances running in the same consul DC",
 			Value:  "resec/.lock",
 			EnvVar: "CONSUL_LOCK_KEY",
 		},
@@ -139,6 +139,8 @@ func main() {
 		default:
 			log.Fatalf("Invalid log format '%s', please use on of [text, json, gelf]", c.String("log-format"))
 		}
+
+		log.Infof("Starting ReSeC %s", Version)
 		return nil
 	}
 	app.Action = func(c *cli.Context) error {

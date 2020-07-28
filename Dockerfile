@@ -1,8 +1,11 @@
 # Build layer
-FROM golang:1.13 AS builder
+FROM golang:1.14 AS builder
 WORKDIR /go/src/github.com/seatgeek/resec
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o build/resec  .
+ARG RESEC_VERSION
+ENV RESEC_VERSION ${RESEC_VERSION:-local-dev}
+RUN echo $RESEC_VERSION
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X 'main.Version=${RESEC_VERSION}'" -a -installsuffix cgo -o build/resec  .
 
 # Run layer
 FROM alpine:latest

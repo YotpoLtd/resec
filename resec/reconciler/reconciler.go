@@ -100,7 +100,7 @@ func (r *Reconciler) Run() {
 				r.logger.WithField("dump_state", "reconciler").Warn(r.prettyPrint(r))
 			}
 
-		// Trigger a
+		// Trigger a reconcile
 		case <-periodicReconcileCh.C:
 			r.reconcileCh <- true
 

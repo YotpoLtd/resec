@@ -6,7 +6,7 @@ require (
 	github.com/bep/debounce v1.2.0
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/hashicorp/consul/api v1.5.0
+	github.com/hashicorp/consul/api v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/onsi/ginkgo v1.14.0 // indirect
 	github.com/seatgeek/logrus-gelf-formatter v0.0.0-20180829220724-ce23ecb3f367
